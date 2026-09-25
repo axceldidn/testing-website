@@ -332,7 +332,16 @@ button{font-family:'Inter',sans-serif;}
           <div class="field"><label>No HP</label><input id="f_hp" type="tel"></div>
           <div class="field"><label>Tgl pemasangan</label><input id="f_tgl" type="date"></div>
         </div>
-        <div class="field"><label>Paket</label><input id="f_paket" placeholder="cth: Juare Basic 20Mbps 150K"></div>
+        <div class="field">
+          <label>Paket</label>
+          <select id="f_paket" onchange="togglePaketManual()">
+            <option value="Juare Basic 20Mbps 150K">Juare Basic 20Mbps — Rp150.000</option>
+            <option value="Juare Up 30Mbps 200K">Juare Up 30Mbps — Rp200.000</option>
+            <option value="Special Juare Up To 50Mbps 200K (BNET)">Juare 50Mbps (BNET) — Rp200.000</option>
+            <option value="__manual__">Lainnya (isi manual)</option>
+          </select>
+          <input id="f_paket_manual" placeholder="Tulis nama paket" class="hide" style="margin-top:8px;">
+        </div>
         <div class="grid2">
           <div class="field"><label>Nama WiFi (SSID)</label><input id="f_ssid"></div>
           <div class="field"><label>Password WiFi</label><input id="f_pass"></div>
@@ -694,7 +703,7 @@ document.querySelectorAll('#navbar button').forEach(btn=>{
     btn.classList.add('active');
     document.querySelectorAll('.tabpane').forEach(p=>p.classList.add('hide'));
     document.getElementById('tab-'+btn.dataset.tab).classList.remove('hide');
-    if(btn.dataset.tab==='peta') setTimeout(()=>{ if(mapObj) mapObj.invalidateSize(); }, 50);
+    if(btn.dataset.tab==='peta') setTimeout(()=>{ renderPeta(); }, 50);
     if(btn.dataset.tab==='users') loadUsers();
   };
 });
@@ -965,6 +974,7 @@ function renderPeta(){
   const box = document.getElementById('mapView');
   if(!box || typeof L === 'undefined') return;
   if(!mapObj){
+    if(box.offsetParent === null) return; // tab belum dibuka, container masih display:none — jangan init dulu
     mapObj = L.map('mapView').setView([-6.0025, 106.0128], 12); // default: sekitar Cilegon
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors', maxZoom: 19
@@ -987,6 +997,7 @@ function renderPeta(){
     const group = L.featureGroup(mapMarkers);
     mapObj.fitBounds(group.getBounds().pad(0.2));
   }
+  mapObj.invalidateSize();
 }
 
 function ambilLokasi(){
@@ -1038,10 +1049,19 @@ function exportKML(){
 }
 
 /* ---------------- Actions ---------------- */
+function togglePaketManual(){
+  const isManual = document.getElementById('f_paket').value === '__manual__';
+  document.getElementById('f_paket_manual').classList.toggle('hide', !isManual);
+}
+function getPaketValue(){
+  const sel = document.getElementById('f_paket').value;
+  return sel === '__manual__' ? val('f_paket_manual') : sel;
+}
+
 async function submitPendaftaran(){
   const payload = {
     nama: val('f_nama'), alamatKtp: val('f_alamatktp'), alamatPasang: val('f_alamatpasang'),
-    noHp: val('f_hp'), paket: val('f_paket'), ssid: val('f_ssid'), password: val('f_pass'),
+    noHp: val('f_hp'), paket: getPaketValue(), ssid: val('f_ssid'), password: val('f_pass'),
     tglPemasangan: val('f_tgl'), noOdc: val('f_odc'), noOdp: val('f_odp'), statusTinggal: val('f_status'),
     lat: val('f_lat'), lng: val('f_lng'), mapsLink: val('f_mapslink')
   };
@@ -1049,7 +1069,9 @@ async function submitPendaftaran(){
   const data = await apiCall('addPendaftaran', payload);
   if(data){
     toast('✅ Pendaftaran terkirim');
-    ['f_nama','f_alamatktp','f_alamatpasang','f_hp','f_paket','f_ssid','f_pass','f_tgl','f_odc','f_odp','f_lat','f_lng','f_mapslink'].forEach(id=>document.getElementById(id).value='');
+    ['f_nama','f_alamatktp','f_alamatpasang','f_hp','f_ssid','f_pass','f_tgl','f_odc','f_odp','f_lat','f_lng','f_mapslink','f_paket_manual'].forEach(id=>document.getElementById(id).value='');
+    document.getElementById('f_paket').value = document.getElementById('f_paket').options[0].value;
+    togglePaketManual();
     document.getElementById('lokasiInfo').textContent = 'Belum diambil — buka form ini dari lokasi rumah client kalau bisa.';
     loadAll();
   }
