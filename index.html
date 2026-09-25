@@ -280,10 +280,6 @@ button{font-family:'Inter',sans-serif;}
         <label>URL Web App (dari Apps Script Deploy)</label>
         <input id="cfgApiUrl" placeholder="https://script.google.com/macros/s/.../exec">
       </div>
-      <div class="field">
-        <label>Secret Key (harus sama dengan SECRET_KEY di .gs)</label>
-        <input id="cfgSecretKey" placeholder="kunci rahasia">
-      </div>
       <button class="btn btn-primary btn-block" onclick="saveSettings()">💾 Simpan &amp; Tes Koneksi</button>
       <button class="btn btn-outline btn-block" style="margin-top:8px;" onclick="toggleSettings(false)">Tutup</button>
       <div id="settingsResult" class="mini-note" style="margin-top:10px;margin-bottom:0;"></div>
@@ -408,6 +404,13 @@ button{font-family:'Inter',sans-serif;}
           <div class="field"><label>Stok dipakai dari</label><input id="m_stok"></div>
         </div>
         <div class="field"><label>Redaman (dB)</label><input id="m_redaman" type="number" step="0.1" placeholder="cth: -18"></div>
+        <h3 style="margin-top:18px;">⏱️ Waktu Pengerjaan</h3>
+        <div class="grid2">
+          <div class="field"><label>Jam Laporan (Admin/CS)</label><input id="m_jamlaporan" type="time" oninput="hitungDurasi()"></div>
+          <div class="field"><label>Jam Selesai (Done)</label><input id="m_jamselesai" type="time" oninput="hitungDurasi()"></div>
+        </div>
+        <button type="button" class="btn btn-outline btn-block" style="margin-bottom:12px;" onclick="isiJamSekarang()">🕐 Isi Jam Selesai = Sekarang</button>
+        <div class="mini-note" id="durasiInfo" style="margin-top:-6px;">Isi kedua jam buat hitung durasi pengerjaan otomatis.</div>
         <h3 style="margin-top:18px;">Material Terpakai</h3>
         <div class="grid2">
           <div class="field"><label>Modem</label><input id="m_modem" type="number" value="0"></div>
@@ -505,28 +508,24 @@ button{font-family:'Inter',sans-serif;}
       dengan SECRET_KEY di file .gs baris atas.
 ===================================================================== */
 const CONFIG = {
-  API_URL: localStorage.getItem('aisnet_api_url') || "GANTI-DENGAN-URL-WEB-APP-APPS-SCRIPT",
-  APP_SECRET_KEY: localStorage.getItem('aisnet_secret_key') || "GANTI-INI-RAHASIA-AISNET-2026"
+  API_URL: localStorage.getItem('aisnet_api_url') || "https://script.google.com/macros/s/AKfycbyGIy78dTAqLRUFAZQpqcAql9Eh4BlUgaiXUOto-VUl3KEMOR3aW0qMNdwEY8Aw45F7Nw/exec",
+  APP_SECRET_KEY: "Aisnet.id" // HARUS SAMA PERSIS dengan SECRET_KEY di .gs — edit di sini, bukan lewat app
 };
 
 function toggleSettings(show){
   document.getElementById('settingsPanel').classList.toggle('hide', !show);
   if(show){
     document.getElementById('cfgApiUrl').value = CONFIG.API_URL.startsWith('GANTI') ? '' : CONFIG.API_URL;
-    document.getElementById('cfgSecretKey').value = CONFIG.APP_SECRET_KEY.startsWith('GANTI') ? '' : CONFIG.APP_SECRET_KEY;
     document.getElementById('settingsResult').textContent = '';
   }
 }
 
 async function saveSettings(){
   const url = document.getElementById('cfgApiUrl').value.trim();
-  const key = document.getElementById('cfgSecretKey').value.trim();
   const resultEl = document.getElementById('settingsResult');
-  if(!url || !key){ resultEl.textContent = '⚠️ Isi URL dan Secret Key dulu.'; return; }
+  if(!url){ resultEl.textContent = '⚠️ Isi URL Web App dulu.'; return; }
   localStorage.setItem('aisnet_api_url', url);
-  localStorage.setItem('aisnet_secret_key', key);
   CONFIG.API_URL = url;
-  CONFIG.APP_SECRET_KEY = key;
   resultEl.textContent = '⏳ Menguji koneksi...';
   const res = await checkConnection();
   resultEl.textContent = res.msg;
@@ -539,7 +538,9 @@ async function saveSettings(){
 async function checkConnection(){
   const statusEl = document.getElementById('connStatus');
   if(CONFIG.API_URL.startsWith('GANTI') || CONFIG.APP_SECRET_KEY.startsWith('GANTI')){
-    const msg = '⚠️ Server belum diatur — klik "Atur Koneksi Server" di bawah.';
+    const msg = CONFIG.APP_SECRET_KEY.startsWith('GANTI')
+      ? '⚠️ APP_SECRET_KEY di file HTML ini belum diisi — edit CONFIG di script, cari baris APP_SECRET_KEY.'
+      : '⚠️ Server belum diatur — klik "Atur Koneksi Server" di bawah.';
     if(statusEl) statusEl.textContent = msg;
     return { ok:false, msg };
   }
@@ -826,6 +827,7 @@ function renderLaporan(){
         <span class="badge ${sttsCls}">${esc(m.stts)}</span>
       </div>
       <div class="meta" style="margin-top:8px;">${esc(m.keterangan||'')}</div>
+      ${(m.jamLaporan||m.jamSelesai) ? `<div class="meta">🕐 Lapor ${esc(m.jamLaporan||'-')} → Selesai ${esc(m.jamSelesai||'-')}${m.durasi?` • ⏱️ ${esc(m.durasi)}`:''}</div>` : ''}
       ${m.fotoUrl ? `<a href="${m.fotoUrl}" target="_blank" class="meta" style="color:var(--info);">📎 Lihat foto</a>` : ''}
     </div>`;
   }).join('');
@@ -978,6 +980,29 @@ function previewFoto(e){
   reader.readAsDataURL(file);
 }
 
+function hmToMinutes_(hm){
+  if(!hm) return null;
+  const [h,m] = hm.split(':').map(Number);
+  return h*60+m;
+}
+function hitungDurasi(){
+  const a = hmToMinutes_(val('m_jamlaporan'));
+  const b = hmToMinutes_(val('m_jamselesai'));
+  const info = document.getElementById('durasiInfo');
+  if(a===null || b===null){ info.textContent = 'Isi kedua jam buat hitung durasi pengerjaan otomatis.'; return; }
+  let diff = b - a;
+  if(diff < 0) diff += 24*60; // lewat tengah malam
+  const jam = Math.floor(diff/60), menit = diff%60;
+  info.textContent = `⏱️ Durasi pengerjaan: ${jam} jam ${menit} menit`;
+}
+function isiJamSekarang(){
+  const now = new Date();
+  const hh = String(now.getHours()).padStart(2,'0');
+  const mm = String(now.getMinutes()).padStart(2,'0');
+  document.getElementById('m_jamselesai').value = `${hh}:${mm}`;
+  hitungDurasi();
+}
+
 async function submitMaintenance(){
   const payload = {
     linkId: val('m_link'),
@@ -985,6 +1010,7 @@ async function submitMaintenance(){
     teknisi: val('m_teknisi'), stok: val('m_stok'), redaman: val('m_redaman'),
     modem: val('m_modem'), adaptor: val('m_adaptor'), patchcore: val('m_patchcore'),
     barrel: val('m_barrel'), kabel: val('m_kabel'), keterangan: val('m_ket'),
+    jamLaporan: val('m_jamlaporan'), jamSelesai: val('m_jamselesai'),
     fotoBase64: fotoBase64
   };
   if(!payload.client){ toast('Nama client wajib diisi'); return; }
@@ -992,15 +1018,17 @@ async function submitMaintenance(){
   const data = await apiCall('addMaintenance', payload);
   if(data){
     toast('✅ Realisasi Maintenance terkirim');
-    ['m_client','m_teknisi','m_stok','m_redaman','m_ket'].forEach(id=>document.getElementById(id).value='');
+    ['m_client','m_teknisi','m_stok','m_redaman','m_ket','m_jamlaporan','m_jamselesai'].forEach(id=>document.getElementById(id).value='');
     ['m_modem','m_adaptor','m_patchcore','m_barrel','m_kabel'].forEach(id=>document.getElementById(id).value='0');
     document.getElementById('m_link').value='';
+    document.getElementById('durasiInfo').textContent = 'Isi kedua jam buat hitung durasi pengerjaan otomatis.';
     fotoBase64 = null;
     document.getElementById('photoBox').innerHTML =
       `<span id="photoLabel">📷 Ketuk untuk ambil / unggah foto</span><input type="file" accept="image/*" capture="environment" id="m_foto" onchange="previewFoto(event)">`;
     loadAll();
   }
 }
+
 
 /* ---------------- Kelola Pengguna (Admin) ---------------- */
 async function loadUsers(){
@@ -1067,9 +1095,9 @@ async function doGantiPassword(){
 
 
 function exportExcel(){
-  const rows = [['Client','ISP','STTS','Teknisi','Stok','Redaman','Modem','Adaptor','Patchcore','Barrel','Kabel(m)','Keterangan','Waktu']];
+  const rows = [['Client','ISP','STTS','Teknisi','Stok','Redaman','Modem','Adaptor','Patchcore','Barrel','Kabel(m)','Jam Laporan','Jam Selesai','Durasi','Keterangan','Waktu Input']];
   STATE.maintenance.forEach(m=>{
-    rows.push([m.client,m.isp,m.stts,m.teknisi,m.stok,m.redaman,m.modem,m.adaptor,m.patchcore,m.barrel,m.kabel,m.keterangan,m.timestamp]);
+    rows.push([m.client,m.isp,m.stts,m.teknisi,m.stok,m.redaman,m.modem,m.adaptor,m.patchcore,m.barrel,m.kabel,m.jamLaporan,m.jamSelesai,m.durasi,m.keterangan,m.timestamp]);
   });
   const csv = rows.map(r=>r.map(c=>`"${String(c===undefined?'':c).replace(/"/g,'""')}"`).join(',')).join('\n');
   const blob = new Blob(["\ufeff"+csv], {type:'text/csv;charset=utf-8;'});
