@@ -382,13 +382,41 @@ button{font-family:'Inter',sans-serif;}
       </div>
     </div>
 
+    <!-- ---- TAB: TIKET MASUK ---- -->
+    <div id="tab-tiket" class="tabpane hide">
+      <div class="form-card" id="tiketFormCard">
+        <h3>🎫 Laporan Gangguan Masuk</h3>
+        <div class="field"><label>Nama Pelanggan / Mikrotik</label><input id="t_nama" placeholder="cth: Rawagondang.Sarip atau Sarip"></div>
+        <div class="field"><label>No HP</label><input id="t_hp" type="tel"></div>
+        <div class="field">
+          <label>Kendala</label>
+          <select id="t_kendala">
+            <option>Modem Error</option>
+            <option>LOS (Redaman Tinggi)</option>
+            <option>Ganti Perangkat</option>
+            <option>Ganti Kabel</option>
+            <option>Lainnya</option>
+          </select>
+        </div>
+        <div class="field"><label>Jam Laporan</label><input id="t_jamlaporan" type="time"></div>
+        <button type="button" class="btn btn-outline btn-block" style="margin-bottom:12px;" onclick="isiJamLaporSekarang()">🕐 Isi Jam = Sekarang</button>
+        <button class="btn btn-primary btn-block" onclick="submitTiket()">Kirim Laporan Gangguan</button>
+      </div>
+      <div class="sect-h"><h2>Tiket Berjalan</h2><span class="count" id="tiketCount">0</span></div>
+      <div id="tiketList"></div>
+    </div>
+
     <!-- ---- TAB: MAINTENANCE ---- -->
     <div id="tab-maint" class="tabpane hide">
       <div class="form-card">
         <h3>#Realisasi Maintenance</h3>
         <div class="field">
-          <label>Kaitkan ke pendaftaran (opsional)</label>
+          <label>Kaitkan ke pendaftaran baru (opsional)</label>
           <select id="m_link"><option value="">— Pilih dari daftar terpasang —</option></select>
+        </div>
+        <div class="field">
+          <label>Kaitkan ke tiket gangguan (opsional)</label>
+          <select id="m_ticket" onchange="isiDariTiket()"><option value="">— Pilih dari tiket yang ditangani —</option></select>
         </div>
         <div class="field"><label>Nama Client</label><input id="m_client"></div>
         <div class="field">
@@ -435,8 +463,10 @@ button{font-family:'Inter',sans-serif;}
 
     <!-- ---- TAB: LAPORAN ---- -->
     <div id="tab-laporan" class="tabpane hide">
-      <div class="sect-h"><h2>📊 Laporan Maintenance</h2></div>
       <button class="btn btn-outline btn-block" style="margin-bottom:14px;" onclick="exportExcel()">⬇️ Export ke Excel (.csv)</button>
+      <div class="sect-h"><h2>📦 Laporan Pemasangan</h2></div>
+      <div id="laporanPemasanganList"></div>
+      <div class="sect-h"><h2>🔧 Laporan Maintenance</h2></div>
       <div id="laporanList"></div>
     </div>
 
@@ -487,6 +517,7 @@ button{font-family:'Inter',sans-serif;}
 <div class="navbar hide" id="navbar">
   <button data-tab="beranda" class="active"><span class="ic">🏠</span>Beranda</button>
   <button data-tab="daftar"><span class="ic">📝</span>Daftar</button>
+  <button data-tab="tiket"><span class="ic">🎫</span>Tiket</button>
   <button data-tab="proses"><span class="ic">🌐</span>Proses</button>
   <button data-tab="maint"><span class="ic">🛠️</span>Maintenance</button>
   <button data-tab="laporan"><span class="ic">📊</span>Laporan</button>
@@ -508,7 +539,7 @@ button{font-family:'Inter',sans-serif;}
       dengan SECRET_KEY di file .gs baris atas.
 ===================================================================== */
 const CONFIG = {
-  API_URL: localStorage.getItem('aisnet_api_url') || "https://script.google.com/macros/s/AKfycbyGIy78dTAqLRUFAZQpqcAql9Eh4BlUgaiXUOto-VUl3KEMOR3aW0qMNdwEY8Aw45F7Nw/exec",
+  API_URL: localStorage.getItem('aisnet_api_url') || "GANTI-DENGAN-URL-WEB-APP-APPS-SCRIPT",
   APP_SECRET_KEY: "Aisnet.id" // HARUS SAMA PERSIS dengan SECRET_KEY di .gs — edit di sini, bukan lewat app
 };
 
@@ -566,7 +597,7 @@ async function checkConnection(){
 }
 checkConnection();
 
-let STATE = { pendaftaran: [], maintenance: [], logs: [], users: [] };
+let STATE = { pendaftaran: [], maintenance: [], tiket: [], logs: [], users: [] };
 let USER = null;
 let fotoBase64 = null;
 let mapObj = null;
@@ -574,12 +605,12 @@ let mapMarkers = [];
 let loginMode = 'staff';
 
 const ROLE_TABS = {
-  "Marketing/CS": ["beranda","daftar","laporan","peta"],
-  "Sales": ["beranda","daftar","laporan","peta"],
-  "Teknisi": ["beranda","daftar","proses","maint","laporan","peta"],
+  "Marketing/CS": ["beranda","daftar","tiket","laporan","peta"],
+  "Sales": ["beranda","daftar","tiket","laporan","peta"],
+  "Teknisi": ["beranda","daftar","tiket","proses","maint","laporan","peta"],
   "Admin Server": ["beranda","proses","laporan","peta"],
-  "Office": ["beranda","daftar","proses","maint","laporan","peta","log"],
-  "Admin": ["beranda","daftar","proses","maint","laporan","peta","log","users"]
+  "Office": ["beranda","daftar","tiket","proses","maint","laporan","peta","log"],
+  "Admin": ["beranda","daftar","tiket","proses","maint","laporan","peta","log","users"]
 };
 
 /* ---------------- Login ---------------- */
@@ -713,6 +744,7 @@ async function loadAll(){
   if(data){
     STATE.pendaftaran = data.pendaftaran || [];
     STATE.maintenance = data.maintenance || [];
+    STATE.tiket = data.tiket || [];
     STATE.logs = data.logs || [];
   }
   renderAll();
@@ -738,6 +770,7 @@ function renderAll(){
   renderBeranda();
   renderDaftar();
   renderProses();
+  renderTiket();
   renderMaintLinkOptions();
   renderLaporan();
   renderLog();
@@ -806,19 +839,82 @@ function renderMaintLinkOptions(){
   const ready = STATE.pendaftaran.filter(x=>x.status==='MikrotikSiap');
   sel.innerHTML = '<option value="">— Pilih dari daftar siap pasang —</option>' +
     ready.map(x=>`<option value="${x.id}">${esc(x.nama)} — ${esc(x.alamatPasang||'')}</option>`).join('');
+
+  const tsel = document.getElementById('m_ticket');
+  const ditangani = STATE.tiket.filter(t=>t.status==='Ditangani');
+  tsel.innerHTML = '<option value="">— Pilih dari tiket yang ditangani —</option>' +
+    ditangani.map(t=>`<option value="${t.id}">${esc(t.namaPelanggan)} — ${esc(t.kendala)}</option>`).join('');
+}
+
+function isiDariTiket(){
+  const id = document.getElementById('m_ticket').value;
+  if(!id) return;
+  const t = STATE.tiket.find(x=>x.id===id);
+  if(!t) return;
+  document.getElementById('m_client').value = t.namaPelanggan;
+  if(t.jamLaporan){ document.getElementById('m_jamlaporan').value = t.jamLaporan; hitungDurasi(); }
+  document.getElementById('m_ket').value = `Keluhan: ${t.kendala}`;
+}
+
+/* ---------------- Tiket Masuk (Laporan Gangguan) ---------------- */
+function renderTiket(){
+  const berjalan = STATE.tiket.filter(t=>t.status!=='Selesai');
+  document.getElementById('tiketCount').textContent = berjalan.length;
+  document.getElementById('tiketFormCard').classList.toggle('hide', !['Marketing/CS','Sales','Office','Admin'].includes(USER.role));
+  const box = document.getElementById('tiketList');
+  if(!berjalan.length){
+    box.innerHTML = `<div class="empty"><span class="ic">🎫</span>Tidak ada tiket gangguan yang berjalan</div>`;
+    return;
+  }
+  box.innerHTML = [...berjalan].reverse().map(t=>{
+    const cls = t.status==='Baru' ? 'st-baru' : 'st-konfirmasi';
+    const badge = t.status==='Baru' ? 'baru' : 'konfirmasi';
+    const canTangani = t.status==='Baru' && ['Teknisi','Office','Admin'].includes(USER.role);
+    return `
+    <div class="card ${cls}">
+      <div class="row1">
+        <div>
+          <div class="nm">${esc(t.namaPelanggan)}</div>
+          <div class="meta">${esc(t.kendala)} • ${esc(t.noHp||'-')}${t.jamLaporan?` • Lapor ${esc(t.jamLaporan)}`:''}</div>
+        </div>
+        <span class="badge ${badge}">${esc(t.status)}</span>
+      </div>
+      ${canTangani ? `<div class="actions"><button class="btn btn-good" onclick="tanganiTiket('${t.id}')">🔧 Tangani</button></div>` : ''}
+      ${t.status==='Ditangani' ? `<div class="mini-note" style="margin:8px 0 0;">Ditangani ${esc(t.teknisiHandling||'-')} — lanjut isi di tab Maintenance</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+async function submitTiket(){
+  const payload = {
+    namaPelanggan: val('t_nama'), noHp: val('t_hp'), kendala: document.getElementById('t_kendala').value,
+    jamLaporan: val('t_jamlaporan')
+  };
+  if(!payload.namaPelanggan){ toast('Isi nama pelanggan/mikrotik dulu'); return; }
+  const data = await apiCall('addTiket', payload);
+  if(data && data.ok){
+    toast('✅ Laporan gangguan tercatat');
+    ['t_nama','t_hp','t_jamlaporan'].forEach(id=>document.getElementById(id).value='');
+    loadAll();
+  }
+}
+function isiJamLaporSekarang(){
+  const now = new Date();
+  document.getElementById('t_jamlaporan').value = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+}
+async function tanganiTiket(id){
+  const data = await apiCall('tanganiTiket', { id });
+  if(data && data.ok){ toast('✅ Tiket ditandai ditangani'); loadAll(); }
 }
 
 function renderLaporan(){
-  const list = [...STATE.maintenance].reverse();
-  const box = document.getElementById('laporanList');
-  if(!list.length){
-    box.innerHTML = `<div class="empty"><span class="ic">🗂️</span>Belum ada laporan maintenance</div>`;
-    return;
-  }
-  box.innerHTML = list.map(m=>{
+  const install = STATE.maintenance.filter(m=>m.pendaftaranId);
+  const repair = STATE.maintenance.filter(m=>!m.pendaftaranId);
+
+  const cardHtml = (m) => {
     const sttsCls = m.stts==='Done'?'selesai':(m.stts==='Progress'?'konfirmasi':'baru');
     return `
-    <div class="card st-${m.stts==='Done'?'selesai':(m.stts==='Progress'?'konfirmasi':'baru')}">
+    <div class="card st-${sttsCls}">
       <div class="row1">
         <div>
           <div class="nm">${esc(m.client)}</div>
@@ -830,7 +926,15 @@ function renderLaporan(){
       ${(m.jamLaporan||m.jamSelesai) ? `<div class="meta">🕐 Lapor ${esc(m.jamLaporan||'-')} → Selesai ${esc(m.jamSelesai||'-')}${m.durasi?` • ⏱️ ${esc(m.durasi)}`:''}</div>` : ''}
       ${m.fotoUrl ? `<a href="${m.fotoUrl}" target="_blank" class="meta" style="color:var(--info);">📎 Lihat foto</a>` : ''}
     </div>`;
-  }).join('');
+  };
+
+  const pBox = document.getElementById('laporanPemasanganList');
+  pBox.innerHTML = install.length ? [...install].reverse().map(cardHtml).join('') :
+    `<div class="empty"><span class="ic">📦</span>Belum ada realisasi pemasangan</div>`;
+
+  const mBox = document.getElementById('laporanList');
+  mBox.innerHTML = repair.length ? [...repair].reverse().map(cardHtml).join('') :
+    `<div class="empty"><span class="ic">🗂️</span>Belum ada laporan maintenance</div>`;
 }
 
 function renderLog(){
@@ -1005,7 +1109,7 @@ function isiJamSekarang(){
 
 async function submitMaintenance(){
   const payload = {
-    linkId: val('m_link'),
+    linkId: val('m_link'), ticketId: val('m_ticket'),
     client: val('m_client'), isp: val('m_isp'), stts: val('m_stts'),
     teknisi: val('m_teknisi'), stok: val('m_stok'), redaman: val('m_redaman'),
     modem: val('m_modem'), adaptor: val('m_adaptor'), patchcore: val('m_patchcore'),
@@ -1021,6 +1125,7 @@ async function submitMaintenance(){
     ['m_client','m_teknisi','m_stok','m_redaman','m_ket','m_jamlaporan','m_jamselesai'].forEach(id=>document.getElementById(id).value='');
     ['m_modem','m_adaptor','m_patchcore','m_barrel','m_kabel'].forEach(id=>document.getElementById(id).value='0');
     document.getElementById('m_link').value='';
+    document.getElementById('m_ticket').value='';
     document.getElementById('durasiInfo').textContent = 'Isi kedua jam buat hitung durasi pengerjaan otomatis.';
     fotoBase64 = null;
     document.getElementById('photoBox').innerHTML =
