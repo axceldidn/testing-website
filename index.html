@@ -359,18 +359,16 @@ button{font-family:'Inter',sans-serif;}
           </select>
         </div>
         <div class="field">
-          <label>Titik Koordinat</label>
-          <button type="button" class="btn btn-outline btn-block" onclick="ambilLokasi()" id="btnLokasi">📍 Ambil Lokasi Saat Ini</button>
-          <div class="mini-note" id="lokasiInfo" style="margin-top:8px;margin-bottom:0;">Belum diambil — buka form ini dari lokasi rumah client kalau bisa.</div>
+          <label>📍 Lokasi Rumah Client</label>
+          <div class="mini-note" style="margin-top:-2px;margin-bottom:8px;">Titik ini yang bikin rumah client muncul di tab Peta. Isi salah satu cara di bawah.</div>
+          <button type="button" class="btn btn-outline btn-block" onclick="ambilLokasi()" id="btnLokasi">📍 Ambil Lokasi Saat Ini (GPS)</button>
           <div class="mini-note" style="margin-top:10px;margin-bottom:4px;">Atau tempel link share Google Maps dari CS/Sales:</div>
           <div style="display:flex;gap:8px;">
             <input id="f_mapslink" placeholder="https://maps.app.goo.gl/..." style="flex:1;background:var(--surface2);border:1px solid var(--line);color:var(--text);padding:10px 11px;border-radius:8px;font-size:13px;">
             <button type="button" class="btn btn-info" onclick="ambilDariLinkMaps()" id="btnLinkMaps" style="white-space:nowrap;">🔗 Ambil</button>
           </div>
-          <div class="grid2" style="margin-top:8px;">
-            <div class="field" style="margin-bottom:0;"><label>Lat</label><input id="f_lat" type="number" step="any"></div>
-            <div class="field" style="margin-bottom:0;"><label>Lng</label><input id="f_lng" type="number" step="any"></div>
-          </div>
+          <div class="mini-note" id="lokasiInfo" style="margin-top:10px;margin-bottom:0;">⚪ Lokasi belum diisi.</div>
+          <input id="f_lat" type="hidden"><input id="f_lng" type="hidden">
         </div>
         <button class="btn btn-primary btn-block" onclick="submitPendaftaran()">Kirim Pendaftaran</button>
       </div>
@@ -409,14 +407,52 @@ button{font-family:'Inter',sans-serif;}
       <div id="tiketList"></div>
     </div>
 
+    <!-- ---- TAB: REALISASI PEMASANGAN ---- -->
+    <div id="tab-pasang" class="tabpane hide">
+      <div class="form-card">
+        <h3>📶 Pemasangan Ais.net</h3>
+        <div class="mini-note" style="margin-top:-6px;">Khusus buat nutup pendaftaran baru yang udah siap dipasang. Bukan buat laporan gangguan/perbaikan — itu di tab Maintenance.</div>
+        <div class="field">
+          <label>Pendaftaran yang dipasang</label>
+          <select id="rp_link" onchange="isiDariPendaftaran()"><option value="">— Pilih dari daftar siap pasang —</option></select>
+        </div>
+        <div class="field"><label>Nama Client</label><input id="rp_client" readonly></div>
+        <div class="field">
+          <label>STTS</label>
+          <select id="rp_stts"><option>Done</option><option>Progress</option><option>Un-handling</option></select>
+        </div>
+        <div class="grid2">
+          <div class="field"><label>Teknisi</label><input id="rp_teknisi" placeholder="cth: Alan,Burhan,didink,Sahel"></div>
+          <div class="field"><label>Stok dipakai dari</label><input id="rp_stok"></div>
+        </div>
+        <div class="field"><label>Redaman (dB)</label><input id="rp_redaman" type="number" step="0.1" placeholder="cth: -18"></div>
+        <h3 style="margin-top:18px;">Material Terpakai</h3>
+        <div class="grid2">
+          <div class="field"><label>Modem</label><input id="rp_modem" type="number" value="0"></div>
+          <div class="field"><label>Adaptor</label><input id="rp_adaptor" type="number" value="0"></div>
+        </div>
+        <div class="grid2">
+          <div class="field"><label>Patchcore</label><input id="rp_patchcore" type="number" value="0"></div>
+          <div class="field"><label>Barrel</label><input id="rp_barrel" type="number" value="0"></div>
+        </div>
+        <div class="field"><label>Kabel (meter)</label><input id="rp_kabel" type="number" value="0"></div>
+        <div class="field"><label>Keterangan (Ket)</label><textarea id="rp_ket" placeholder="cth: psb"></textarea></div>
+        <div class="field">
+          <label>Foto Bukti</label>
+          <div class="photo-box" id="photoBoxPasang">
+            <span id="photoLabelPasang">📷 Ketuk untuk ambil / unggah foto</span>
+            <input type="file" accept="image/*" capture="environment" id="rp_foto" onchange="previewFotoPasang(event)">
+          </div>
+        </div>
+        <button class="btn btn-primary btn-block" onclick="submitRealisasiPemasangan()">Kirim Pemasangan Ais.net</button>
+      </div>
+    </div>
+
     <!-- ---- TAB: MAINTENANCE ---- -->
     <div id="tab-maint" class="tabpane hide">
       <div class="form-card">
         <h3>#Realisasi Maintenance</h3>
-        <div class="field">
-          <label>Kaitkan ke pendaftaran baru (opsional)</label>
-          <select id="m_link"><option value="">— Pilih dari daftar terpasang —</option></select>
-        </div>
+        <div class="mini-note" style="margin-top:-6px;">Khusus buat gangguan/perbaikan. Buat nutup pendaftaran baru, pakai tab Pemasangan.</div>
         <div class="field">
           <label>Kaitkan ke tiket gangguan (opsional)</label>
           <select id="m_ticket" onchange="isiDariTiket()"><option value="">— Pilih dari tiket yang ditangani —</option></select>
@@ -540,6 +576,7 @@ button{font-family:'Inter',sans-serif;}
   <button data-tab="daftar"><span class="ic">📝</span>Daftar</button>
   <button data-tab="tiket"><span class="ic">🎫</span>Tiket</button>
   <button data-tab="proses"><span class="ic">🌐</span>Proses</button>
+  <button data-tab="pasang"><span class="ic">📶</span>Pemasangan</button>
   <button data-tab="maint"><span class="ic">🛠️</span>Maintenance</button>
   <button data-tab="laporan"><span class="ic">📊</span>Laporan</button>
   <button data-tab="peta"><span class="ic">🗺️</span>Peta</button>
@@ -621,6 +658,7 @@ checkConnection();
 let STATE = { pendaftaran: [], maintenance: [], tiket: [], logs: [], users: [], master: [] };
 let USER = null;
 let fotoBase64 = null;
+let fotoBase64Pasang = null;
 let mapObj = null;
 let mapMarkers = [];
 let loginMode = 'staff';
@@ -628,10 +666,10 @@ let loginMode = 'staff';
 const ROLE_TABS = {
   "Marketing/CS": ["beranda","daftar","tiket","laporan","peta"],
   "Sales": ["beranda","daftar","tiket","laporan","peta"],
-  "Teknisi": ["beranda","daftar","tiket","proses","maint","laporan","peta"],
+  "Teknisi": ["beranda","daftar","tiket","proses","pasang","maint","laporan","peta"],
   "Admin Server": ["beranda","proses","laporan","peta"],
-  "Office": ["beranda","daftar","tiket","proses","maint","laporan","peta","log"],
-  "Admin": ["beranda","daftar","tiket","proses","maint","laporan","peta","log","users"]
+  "Office": ["beranda","daftar","tiket","proses","pasang","maint","laporan","peta","log"],
+  "Admin": ["beranda","daftar","tiket","proses","pasang","maint","laporan","peta","log","users"]
 };
 
 /* ---------------- Login ---------------- */
@@ -793,6 +831,7 @@ function renderAll(){
   renderDaftar();
   renderProses();
   renderTiket();
+  renderPasangLinkOptions();
   renderMaintLinkOptions();
   renderLaporan();
   renderLog();
@@ -859,16 +898,28 @@ function renderProses(){
     `<div class="empty"><span class="ic">👌</span>Tidak ada yang menunggu setup Mikrotik</div>`;
 }
 
-function renderMaintLinkOptions(){
-  const sel = document.getElementById('m_link');
+function renderPasangLinkOptions(){
+  const sel = document.getElementById('rp_link');
+  const current = sel.value;
   const ready = STATE.pendaftaran.filter(x=>x.status==='MikrotikSiap');
   sel.innerHTML = '<option value="">— Pilih dari daftar siap pasang —</option>' +
     ready.map(x=>`<option value="${x.id}">${esc(x.nama)} — ${esc(x.alamatPasang||'')}</option>`).join('');
+  if(current && [...sel.options].some(o=>o.value===current)) sel.value = current;
+}
 
+function isiDariPendaftaran(){
+  const id = document.getElementById('rp_link').value;
+  const x = STATE.pendaftaran.find(p=>p.id===id);
+  document.getElementById('rp_client').value = x ? x.nama : '';
+}
+
+function renderMaintLinkOptions(){
   const tsel = document.getElementById('m_ticket');
+  const current = tsel.value;
   const ditangani = STATE.tiket.filter(t=>t.status==='Ditangani');
   tsel.innerHTML = '<option value="">— Pilih dari tiket yang ditangani —</option>' +
     ditangani.map(t=>`<option value="${t.id}">${esc(t.namaPelanggan)} — ${esc(t.kendala)}</option>`).join('');
+  if(current && [...tsel.options].some(o=>o.value===current)) tsel.value = current;
 }
 
 function isiDariTiket(){
@@ -1025,11 +1076,11 @@ function ambilLokasi(){
   navigator.geolocation.getCurrentPosition(pos=>{
     document.getElementById('f_lat').value = pos.coords.latitude.toFixed(6);
     document.getElementById('f_lng').value = pos.coords.longitude.toFixed(6);
-    document.getElementById('lokasiInfo').textContent = `✅ Lokasi terkunci: ${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}`;
-    btn.disabled = false; btn.textContent = '📍 Ambil Lokasi Saat Ini';
+    document.getElementById('lokasiInfo').textContent = `✅ Lokasi tersimpan dari GPS (${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)})`;
+    btn.disabled = false; btn.textContent = '📍 Ambil Lokasi Saat Ini (GPS)';
   }, err=>{
     toast('❌ Gagal ambil lokasi: '+err.message);
-    btn.disabled = false; btn.textContent = '📍 Ambil Lokasi Saat Ini';
+    btn.disabled = false; btn.textContent = '📍 Ambil Lokasi Saat Ini (GPS)';
   }, { enableHighAccuracy:true, timeout:15000 });
 }
 
@@ -1043,9 +1094,9 @@ async function ambilDariLinkMaps(){
   if(data && data.ok){
     document.getElementById('f_lat').value = data.lat.toFixed(6);
     document.getElementById('f_lng').value = data.lng.toFixed(6);
-    document.getElementById('lokasiInfo').textContent = `✅ Dari link Maps: ${data.lat.toFixed(5)}, ${data.lng.toFixed(5)}`;
+    document.getElementById('lokasiInfo').textContent = `✅ Lokasi tersimpan dari link Maps (${data.lat.toFixed(5)}, ${data.lng.toFixed(5)})`;
   } else {
-    toast('❌ '+(data && data.error ? data.error : 'Gagal baca link, isi Lat/Lng manual saja'));
+    toast('❌ '+(data && data.error ? data.error : 'Gagal baca link, coba pakai tombol GPS'));
   }
 }
 
@@ -1147,7 +1198,7 @@ async function submitPendaftaran(){
     ['f_nama','f_alamatktp','f_alamatpasang','f_hp','f_ssid','f_pass','f_tgl','f_odc','f_odp','f_lat','f_lng','f_mapslink','f_paket_manual'].forEach(id=>document.getElementById(id).value='');
     document.getElementById('f_paket').value = document.getElementById('f_paket').options[0].value;
     togglePaketManual();
-    document.getElementById('lokasiInfo').textContent = 'Belum diambil — buka form ini dari lokasi rumah client kalau bisa.';
+    document.getElementById('lokasiInfo').textContent = '⚪ Lokasi belum diisi.';
     loadAll();
   }
 }
@@ -1181,6 +1232,18 @@ function previewFoto(e){
   reader.readAsDataURL(file);
 }
 
+function previewFotoPasang(e){
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = ()=>{
+    fotoBase64Pasang = reader.result;
+    document.getElementById('photoBoxPasang').innerHTML =
+      `<img src="${fotoBase64Pasang}"><input type="file" accept="image/*" capture="environment" id="rp_foto" onchange="previewFotoPasang(event)">`;
+  };
+  reader.readAsDataURL(file);
+}
+
 function hmToMinutes_(hm){
   if(!hm) return null;
   const [h,m] = hm.split(':').map(Number);
@@ -1204,9 +1267,34 @@ function isiJamSekarang(){
   hitungDurasi();
 }
 
+async function submitRealisasiPemasangan(){
+  const linkId = val('rp_link');
+  if(!linkId){ toast('Pilih dulu pendaftaran yang mau dipasang'); return; }
+  const payload = {
+    linkId, client: val('rp_client'), stts: val('rp_stts'),
+    teknisi: val('rp_teknisi'), stok: val('rp_stok'), redaman: val('rp_redaman'),
+    modem: val('rp_modem'), adaptor: val('rp_adaptor'), patchcore: val('rp_patchcore'),
+    barrel: val('rp_barrel'), kabel: val('rp_kabel'), keterangan: val('rp_ket'),
+    fotoBase64: fotoBase64Pasang
+  };
+  toast('⏳ Mengirim laporan...');
+  const data = await apiCall('addMaintenance', payload);
+  if(data){
+    toast('✅ Pemasangan Ais.net terkirim');
+    ['rp_teknisi','rp_stok','rp_redaman','rp_ket'].forEach(id=>document.getElementById(id).value='');
+    ['rp_modem','rp_adaptor','rp_patchcore','rp_barrel','rp_kabel'].forEach(id=>document.getElementById(id).value='0');
+    document.getElementById('rp_link').value='';
+    document.getElementById('rp_client').value='';
+    fotoBase64Pasang = null;
+    document.getElementById('photoBoxPasang').innerHTML =
+      `<span id="photoLabelPasang">📷 Ketuk untuk ambil / unggah foto</span><input type="file" accept="image/*" capture="environment" id="rp_foto" onchange="previewFotoPasang(event)">`;
+    loadAll();
+  }
+}
+
 async function submitMaintenance(){
   const payload = {
-    linkId: val('m_link'), ticketId: val('m_ticket'),
+    ticketId: val('m_ticket'),
     client: val('m_client'), isp: val('m_isp'), stts: val('m_stts'),
     teknisi: val('m_teknisi'), stok: val('m_stok'), redaman: val('m_redaman'),
     modem: val('m_modem'), adaptor: val('m_adaptor'), patchcore: val('m_patchcore'),
@@ -1221,7 +1309,6 @@ async function submitMaintenance(){
     toast('✅ Realisasi Maintenance terkirim');
     ['m_client','m_teknisi','m_stok','m_redaman','m_ket','m_jamlaporan','m_jamselesai'].forEach(id=>document.getElementById(id).value='');
     ['m_modem','m_adaptor','m_patchcore','m_barrel','m_kabel'].forEach(id=>document.getElementById(id).value='0');
-    document.getElementById('m_link').value='';
     document.getElementById('m_ticket').value='';
     document.getElementById('durasiInfo').textContent = 'Isi kedua jam buat hitung durasi pengerjaan otomatis.';
     fotoBase64 = null;
