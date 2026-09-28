@@ -151,6 +151,13 @@ button{font-family:'Inter',sans-serif;}
 }
 .photo-box img{max-width:100%;border-radius:8px;display:block;margin-top:8px;}
 .photo-box input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;}
+.file-item{display:flex;align-items:center;gap:10px;background:var(--surface2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:8px;font-size:12.5px;}
+.file-item img{width:38px;height:38px;object-fit:cover;border-radius:6px;margin:0;}
+.file-item .ico{width:38px;height:38px;display:flex;align-items:center;justify-content:center;font-size:20px;background:var(--surface);border-radius:6px;flex:none;}
+.file-item .fi{flex:1;min-width:0;}
+.file-item .fi b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600;}
+.file-item .fi span{color:var(--text-dim);font-size:11px;}
+.file-item button{background:none;border:none;color:var(--danger,#E5484D);font-size:16px;cursor:pointer;padding:4px 8px;}
 
 /* ---------- Log timeline ---------- */
 .log-item{display:flex;gap:10px;margin-bottom:14px;}
@@ -370,6 +377,14 @@ button{font-family:'Inter',sans-serif;}
           <div class="mini-note" id="lokasiInfo" style="margin-top:10px;margin-bottom:0;">⚪ Lokasi belum diisi.</div>
           <input id="f_lat" type="hidden"><input id="f_lng" type="hidden">
         </div>
+        <div class="field">
+          <label>Lampiran (foto rumah, KTP, dll)</label>
+          <div class="photo-box">
+            <span>📎 Ketuk untuk pilih file — boleh lebih dari satu</span>
+            <input type="file" multiple id="f_files" onchange="tambahFiles('daftar', event)">
+          </div>
+          <div id="fileListDaftar"></div>
+        </div>
         <button class="btn btn-primary btn-block" onclick="submitPendaftaran()">Kirim Pendaftaran</button>
       </div>
       <div class="sect-h"><h2>Daftar Terbaru</h2><span class="count" id="daftarCount">0</span></div>
@@ -438,11 +453,12 @@ button{font-family:'Inter',sans-serif;}
         <div class="field"><label>Kabel (meter)</label><input id="rp_kabel" type="number" value="0"></div>
         <div class="field"><label>Keterangan (Ket)</label><textarea id="rp_ket" placeholder="cth: psb"></textarea></div>
         <div class="field">
-          <label>Foto Bukti</label>
-          <div class="photo-box" id="photoBoxPasang">
-            <span id="photoLabelPasang">📷 Ketuk untuk ambil / unggah foto</span>
-            <input type="file" accept="image/*" capture="environment" id="rp_foto" onchange="previewFotoPasang(event)">
+          <label>Lampiran (foto, video, PDF, dll)</label>
+          <div class="photo-box">
+            <span>📎 Ketuk untuk pilih file — boleh lebih dari satu</span>
+            <input type="file" multiple id="rp_files" onchange="tambahFiles('pasang', event)">
           </div>
+          <div id="fileListPasang"></div>
         </div>
         <button class="btn btn-primary btn-block" onclick="submitRealisasiPemasangan()">Kirim Pemasangan Ais.net</button>
       </div>
@@ -490,11 +506,12 @@ button{font-family:'Inter',sans-serif;}
         <div class="field"><label>Kabel (meter)</label><input id="m_kabel" type="number" value="0"></div>
         <div class="field"><label>Keterangan</label><textarea id="m_ket"></textarea></div>
         <div class="field">
-          <label>Foto Bukti</label>
-          <div class="photo-box" id="photoBox">
-            <span id="photoLabel">📷 Ketuk untuk ambil / unggah foto</span>
-            <input type="file" accept="image/*" capture="environment" id="m_foto" onchange="previewFoto(event)">
+          <label>Lampiran (foto, video, PDF, dll)</label>
+          <div class="photo-box">
+            <span>📎 Ketuk untuk pilih file — boleh lebih dari satu</span>
+            <input type="file" multiple id="m_files" onchange="tambahFiles('maint', event)">
           </div>
+          <div id="fileListMaint"></div>
         </div>
         <button class="btn btn-primary btn-block" onclick="submitMaintenance()">Kirim Realisasi Maintenance</button>
       </div>
@@ -657,8 +674,9 @@ checkConnection();
 
 let STATE = { pendaftaran: [], maintenance: [], tiket: [], logs: [], users: [], master: [] };
 let USER = null;
-let fotoBase64 = null;
-let fotoBase64Pasang = null;
+const FILES = { maint: [], pasang: [], daftar: [] };
+const FILE_BOX = { maint:'fileListMaint', pasang:'fileListPasang', daftar:'fileListDaftar' };
+const MAX_FILE_MB = 10, MAX_TOTAL_MB = 20;
 let mapObj = null;
 let mapMarkers = [];
 let loginMode = 'staff';
@@ -864,7 +882,7 @@ function pendaftaranCard(x){
   } else if(x.status==='Dikonfirmasi'){
     actions = `<button class="btn btn-info" onclick="openMikrotikPrompt('${x.id}')">🌐 Isi Mikrotik</button>`;
   } else if(x.status==='MikrotikSiap'){
-    actions = `<span class="mini-note" style="margin:0;">Lanjut isi Realisasi Maintenance di tab Maintenance</span>`;
+    actions = `<span class="mini-note" style="margin:0;">Lanjut isi Pemasangan Ais.net di tab Pemasangan</span>`;
   }
   return `
   <div class="card ${cardClass(x.status)}">
@@ -872,6 +890,7 @@ function pendaftaranCard(x){
       <div>
         <div class="nm">${esc(x.nama)}</div>
         <div class="meta">${esc(x.paket||'-')} • ${esc(x.noHp||'-')}<br>${esc(x.alamatPasang||'')}</div>
+        ${lampiranLinks_(x.lampiran)}
       </div>
       ${statusBadge(x.status)}
     </div>
@@ -985,6 +1004,11 @@ async function tanganiTiket(id){
   if(data && data.ok){ toast('✅ Tiket ditandai ditangani'); loadAll(); }
 }
 
+function lampiranLinks_(raw){
+  const urls = String(raw||'').split(/\s+/).filter(u=>/^https?:\/\//.test(u));
+  return urls.map((u,i)=>`<a href="${esc(u)}" target="_blank" class="meta" style="color:var(--info);display:inline-block;margin-right:12px;">📎 Lampiran ${urls.length>1?i+1:''}</a>`).join('');
+}
+
 function renderLaporan(){
   const install = STATE.maintenance.filter(m=>m.pendaftaranId);
   const repair = STATE.maintenance.filter(m=>!m.pendaftaranId);
@@ -1002,7 +1026,7 @@ function renderLaporan(){
       </div>
       <div class="meta" style="margin-top:8px;">${esc(m.keterangan||'')}</div>
       ${(m.jamLaporan||m.jamSelesai) ? `<div class="meta">🕐 Lapor ${esc(m.jamLaporan||'-')} → Selesai ${esc(m.jamSelesai||'-')}${m.durasi?` • ⏱️ ${esc(m.durasi)}`:''}</div>` : ''}
-      ${m.fotoUrl ? `<a href="${m.fotoUrl}" target="_blank" class="meta" style="color:var(--info);">📎 Lihat foto</a>` : ''}
+      ${lampiranLinks_(m.fotoUrl)}
     </div>`;
   };
 
@@ -1189,7 +1213,8 @@ async function submitPendaftaran(){
     nama: val('f_nama'), alamatKtp: val('f_alamatktp'), alamatPasang: val('f_alamatpasang'),
     noHp: val('f_hp'), paket: getPaketValue(), ssid: val('f_ssid'), password: val('f_pass'),
     tglPemasangan: val('f_tgl'), noOdc: val('f_odc'), noOdp: val('f_odp'), statusTinggal: val('f_status'),
-    lat: val('f_lat'), lng: val('f_lng'), mapsLink: val('f_mapslink')
+    lat: val('f_lat'), lng: val('f_lng'), mapsLink: val('f_mapslink'),
+    files: filesPayload('daftar')
   };
   if(!payload.nama || !payload.noHp){ toast('Nama dan No HP wajib diisi'); return; }
   const data = await apiCall('addPendaftaran', payload);
@@ -1199,6 +1224,7 @@ async function submitPendaftaran(){
     document.getElementById('f_paket').value = document.getElementById('f_paket').options[0].value;
     togglePaketManual();
     document.getElementById('lokasiInfo').textContent = '⚪ Lokasi belum diisi.';
+    FILES.daftar = []; renderFiles('daftar');
     loadAll();
   }
 }
@@ -1220,28 +1246,40 @@ async function setMikrotik(id, ip, mUser, mPass){
   if(data){ toast('✅ Konfigurasi Mikrotik disimpan'); loadAll(); }
 }
 
-function previewFoto(e){
-  const file = e.target.files[0];
-  if(!file) return;
-  const reader = new FileReader();
-  reader.onload = ()=>{
-    fotoBase64 = reader.result;
-    document.getElementById('photoBox').innerHTML =
-      `<img src="${fotoBase64}"><input type="file" accept="image/*" capture="environment" id="m_foto" onchange="previewFoto(event)">`;
-  };
-  reader.readAsDataURL(file);
+function fileIcon_(type, name){
+  if(type.startsWith('video/')) return '🎬';
+  if(type==='application/pdf') return '📄';
+  if(/\.(xls|xlsx|csv)$/i.test(name)) return '📊';
+  if(/\.(doc|docx|txt)$/i.test(name)) return '📝';
+  return '📎';
 }
-
-function previewFotoPasang(e){
-  const file = e.target.files[0];
-  if(!file) return;
-  const reader = new FileReader();
-  reader.onload = ()=>{
-    fotoBase64Pasang = reader.result;
-    document.getElementById('photoBoxPasang').innerHTML =
-      `<img src="${fotoBase64Pasang}"><input type="file" accept="image/*" capture="environment" id="rp_foto" onchange="previewFotoPasang(event)">`;
-  };
-  reader.readAsDataURL(file);
+function tambahFiles(kind, e){
+  const list = FILES[kind];
+  const picked = [...e.target.files];
+  e.target.value = ''; // biar file yang sama bisa dipilih ulang
+  picked.forEach(file=>{
+    const totalMb = list.reduce((a,f)=>a+f.size,0)/1048576 + file.size/1048576;
+    if(file.size/1048576 > MAX_FILE_MB){ toast(`❌ ${file.name} lebih dari ${MAX_FILE_MB} MB`); return; }
+    if(totalMb > MAX_TOTAL_MB){ toast(`❌ Total lampiran maksimal ${MAX_TOTAL_MB} MB`); return; }
+    const reader = new FileReader();
+    reader.onload = ()=>{
+      list.push({ name:file.name, type:file.type||'application/octet-stream', size:file.size, data:reader.result });
+      renderFiles(kind);
+    };
+    reader.readAsDataURL(file);
+  });
+}
+function hapusFile(kind, i){ FILES[kind].splice(i,1); renderFiles(kind); }
+function renderFiles(kind){
+  const box = document.getElementById(FILE_BOX[kind]);
+  box.innerHTML = FILES[kind].map((f,i)=>{
+    const thumb = f.type.startsWith('image/') ? `<img src="${f.data}">` : `<div class="ico">${fileIcon_(f.type,f.name)}</div>`;
+    const mb = (f.size/1048576).toFixed(1);
+    return `<div class="file-item">${thumb}<div class="fi"><b>${esc(f.name)}</b><span>${mb} MB</span></div><button onclick="hapusFile('${kind}',${i})">✕</button></div>`;
+  }).join('');
+}
+function filesPayload(kind){
+  return FILES[kind].map(f=>({ name:f.name, data:f.data }));
 }
 
 function hmToMinutes_(hm){
@@ -1275,7 +1313,7 @@ async function submitRealisasiPemasangan(){
     teknisi: val('rp_teknisi'), stok: val('rp_stok'), redaman: val('rp_redaman'),
     modem: val('rp_modem'), adaptor: val('rp_adaptor'), patchcore: val('rp_patchcore'),
     barrel: val('rp_barrel'), kabel: val('rp_kabel'), keterangan: val('rp_ket'),
-    fotoBase64: fotoBase64Pasang
+    files: filesPayload('pasang')
   };
   toast('⏳ Mengirim laporan...');
   const data = await apiCall('addMaintenance', payload);
@@ -1285,9 +1323,7 @@ async function submitRealisasiPemasangan(){
     ['rp_modem','rp_adaptor','rp_patchcore','rp_barrel','rp_kabel'].forEach(id=>document.getElementById(id).value='0');
     document.getElementById('rp_link').value='';
     document.getElementById('rp_client').value='';
-    fotoBase64Pasang = null;
-    document.getElementById('photoBoxPasang').innerHTML =
-      `<span id="photoLabelPasang">📷 Ketuk untuk ambil / unggah foto</span><input type="file" accept="image/*" capture="environment" id="rp_foto" onchange="previewFotoPasang(event)">`;
+    FILES.pasang = []; renderFiles('pasang');
     loadAll();
   }
 }
@@ -1300,7 +1336,7 @@ async function submitMaintenance(){
     modem: val('m_modem'), adaptor: val('m_adaptor'), patchcore: val('m_patchcore'),
     barrel: val('m_barrel'), kabel: val('m_kabel'), keterangan: val('m_ket'),
     jamLaporan: val('m_jamlaporan'), jamSelesai: val('m_jamselesai'),
-    fotoBase64: fotoBase64
+    files: filesPayload('maint')
   };
   if(!payload.client){ toast('Nama client wajib diisi'); return; }
   toast('⏳ Mengirim laporan...');
@@ -1311,9 +1347,7 @@ async function submitMaintenance(){
     ['m_modem','m_adaptor','m_patchcore','m_barrel','m_kabel'].forEach(id=>document.getElementById(id).value='0');
     document.getElementById('m_ticket').value='';
     document.getElementById('durasiInfo').textContent = 'Isi kedua jam buat hitung durasi pengerjaan otomatis.';
-    fotoBase64 = null;
-    document.getElementById('photoBox').innerHTML =
-      `<span id="photoLabel">📷 Ketuk untuk ambil / unggah foto</span><input type="file" accept="image/*" capture="environment" id="m_foto" onchange="previewFoto(event)">`;
+    FILES.maint = []; renderFiles('maint');
     loadAll();
   }
 }
