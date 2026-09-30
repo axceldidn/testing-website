@@ -1024,11 +1024,24 @@ function lampiranLinks_(raw){
   return urls.map((u,i)=>`<a href="${esc(u)}" target="_blank" class="meta" style="color:var(--info);display:inline-block;margin-right:12px;">📎 Lampiran ${urls.length>1?i+1:''}</a>`).join('');
 }
 
+function lokasiMaintenance_(m){
+  if(m.pendaftaranId){
+    const x = STATE.pendaftaran.find(p=>p.id===m.pendaftaranId);
+    if(x) return { alamat: x.alamatPasang||'', mapsLink: x.mapsLink||'' };
+  }
+  if(m.ticketId){
+    const t = STATE.tiket.find(t=>t.id===m.ticketId);
+    if(t) return { alamat: t.alamat||'', mapsLink: t.mapsLink||'' };
+  }
+  return { alamat:'', mapsLink:'' };
+}
+
 function renderLaporan(){
   const install = STATE.maintenance.filter(m=>m.pendaftaranId);
   const repair = STATE.maintenance.filter(m=>!m.pendaftaranId);
 
   const cardHtml = (m) => {
+    const lok = lokasiMaintenance_(m);
     const sttsCls = m.stts==='Done'?'selesai':(m.stts==='Progress'?'konfirmasi':'baru');
     return `
     <div class="card st-${sttsCls}">
@@ -1041,6 +1054,8 @@ function renderLaporan(){
       </div>
       <div class="meta" style="margin-top:8px;">${esc(m.keterangan||'')}</div>
       ${(m.jamLaporan||m.jamSelesai) ? `<div class="meta">🕐 Lapor ${esc(m.jamLaporan||'-')} → Selesai ${esc(m.jamSelesai||'-')}${m.durasi?` • ⏱️ ${esc(m.durasi)}`:''}</div>` : ''}
+      ${lok.alamat ? `<div class="meta">📍 ${esc(lok.alamat)}</div>` : ''}
+      ${mapsUrl_(lok.mapsLink, lok.alamat) ? `<a class="btn btn-info" href="${esc(mapsUrl_(lok.mapsLink, lok.alamat))}" target="_blank" style="margin-top:6px;display:inline-block;">🗺️ Buka Maps</a>` : ''}
       ${lampiranLinks_(m.fotoUrl)}
     </div>`;
   };
@@ -1433,9 +1448,10 @@ async function doGantiPassword(){
 
 
 function exportExcel(){
-  const rows = [['Client','ISP','STTS','Teknisi','Stok','Redaman','Modem','Adaptor','Patchcore','Barrel','Kabel(m)','Jam Laporan','Jam Selesai','Durasi','Keterangan','Waktu Input']];
+  const rows = [['Client','Alamat','Link Maps','ISP','STTS','Teknisi','Stok','Redaman','Modem','Adaptor','Patchcore','Barrel','Kabel(m)','Jam Laporan','Jam Selesai','Durasi','Keterangan','Waktu Input']];
   STATE.maintenance.forEach(m=>{
-    rows.push([m.client,m.isp,m.stts,m.teknisi,m.stok,m.redaman,m.modem,m.adaptor,m.patchcore,m.barrel,m.kabel,m.jamLaporan,m.jamSelesai,m.durasi,m.keterangan,m.timestamp]);
+    const lok = lokasiMaintenance_(m);
+    rows.push([m.client,lok.alamat,mapsUrl_(lok.mapsLink, lok.alamat),m.isp,m.stts,m.teknisi,m.stok,m.redaman,m.modem,m.adaptor,m.patchcore,m.barrel,m.kabel,m.jamLaporan,m.jamSelesai,m.durasi,m.keterangan,m.timestamp]);
   });
   const csv = rows.map(r=>r.map(c=>`"${String(c===undefined?'':c).replace(/"/g,'""')}"`).join(',')).join('\n');
   const blob = new Blob(["\ufeff"+csv], {type:'text/csv;charset=utf-8;'});
