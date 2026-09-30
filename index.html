@@ -409,6 +409,8 @@ button{font-family:'Inter',sans-serif;}
         <h3>🎫 Laporan Gangguan Masuk</h3>
         <div class="field"><label>Nama Pelanggan / Mikrotik</label><input id="t_nama" placeholder="cth: Rawagondang.Sarip atau Sarip"></div>
         <div class="field"><label>No HP</label><input id="t_hp" type="tel"></div>
+        <div class="field"><label>Alamat</label><input id="t_alamat" placeholder="Alamat rumah/lokasi client"></div>
+        <div class="field"><label>Link Google Maps (opsional)</label><input id="t_mapslink" placeholder="https://maps.app.goo.gl/..."></div>
         <div class="field">
           <label>Kendala</label>
           <select id="t_kendala" onchange="toggleKendalaManual()"></select>
@@ -894,7 +896,10 @@ function pendaftaranCard(x){
       </div>
       ${statusBadge(x.status)}
     </div>
-    <div class="actions">${actions}</div>
+    <div class="actions">
+      ${mapsUrl_(x.mapsLink, x.alamatPasang) ? `<a class="btn btn-info" href="${esc(mapsUrl_(x.mapsLink, x.alamatPasang))}" target="_blank">🗺️ Buka Maps</a>` : ''}
+      ${actions}
+    </div>
   </div>`;
 }
 
@@ -971,10 +976,14 @@ function renderTiket(){
         <div>
           <div class="nm">${esc(t.namaPelanggan)}</div>
           <div class="meta">${esc(t.kendala)} • ${esc(t.noHp||'-')}${t.jamLaporan?` • Lapor ${esc(t.jamLaporan)}`:''}</div>
+          ${t.alamat ? `<div class="meta">📍 ${esc(t.alamat)}</div>` : ''}
         </div>
         <span class="badge ${badge}">${esc(t.status)}</span>
       </div>
-      ${canTangani ? `<div class="actions"><button class="btn btn-good" onclick="tanganiTiket('${t.id}')">🔧 Tangani</button></div>` : ''}
+      <div class="actions">
+        ${mapsUrl_(t.mapsLink, t.alamat) ? `<a class="btn btn-info" href="${esc(mapsUrl_(t.mapsLink, t.alamat))}" target="_blank">🗺️ Buka Maps</a>` : ''}
+        ${canTangani ? `<button class="btn btn-good" onclick="tanganiTiket('${t.id}')">🔧 Tangani</button>` : ''}
+      </div>
       ${t.status==='Ditangani' ? `<div class="mini-note" style="margin:8px 0 0;">Ditangani ${esc(t.teknisiHandling||'-')} — lanjut isi di tab Maintenance</div>` : ''}
     </div>`;
   }).join('');
@@ -982,7 +991,8 @@ function renderTiket(){
 
 async function submitTiket(){
   const payload = {
-    namaPelanggan: val('t_nama'), noHp: val('t_hp'), kendala: getKendalaValue(),
+    namaPelanggan: val('t_nama'), noHp: val('t_hp'), alamat: val('t_alamat'),
+    mapsLink: val('t_mapslink'), kendala: getKendalaValue(),
     jamLaporan: val('t_jamlaporan')
   };
   if(!payload.namaPelanggan){ toast('Isi nama pelanggan/mikrotik dulu'); return; }
@@ -990,7 +1000,7 @@ async function submitTiket(){
   const data = await apiCall('addTiket', payload);
   if(data && data.ok){
     toast('✅ Laporan gangguan tercatat');
-    ['t_nama','t_hp','t_jamlaporan','t_kendala_manual'].forEach(id=>document.getElementById(id).value='');
+    ['t_nama','t_hp','t_alamat','t_mapslink','t_jamlaporan','t_kendala_manual'].forEach(id=>document.getElementById(id).value='');
     toggleKendalaManual();
     loadAll();
   }
@@ -1004,6 +1014,11 @@ async function tanganiTiket(id){
   if(data && data.ok){ toast('✅ Tiket ditandai ditangani'); loadAll(); }
 }
 
+function mapsUrl_(mapsLink, alamat){
+  if(mapsLink) return mapsLink;
+  if(alamat) return 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(alamat);
+  return '';
+}
 function lampiranLinks_(raw){
   const urls = String(raw||'').split(/\s+/).filter(u=>/^https?:\/\//.test(u));
   return urls.map((u,i)=>`<a href="${esc(u)}" target="_blank" class="meta" style="color:var(--info);display:inline-block;margin-right:12px;">📎 Lampiran ${urls.length>1?i+1:''}</a>`).join('');
