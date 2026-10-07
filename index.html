@@ -1145,13 +1145,18 @@ async function ambilDariLinkMaps(){
   btn.disabled = true; btn.textContent = '⏳...';
   const data = await apiCall('resolveMapsLink', { link });
   btn.disabled = false; btn.textContent = '🔗 Ambil';
-  if(data && data.ok){
-    document.getElementById('f_lat').value = data.lat.toFixed(6);
-    document.getElementById('f_lng').value = data.lng.toFixed(6);
-    document.getElementById('lokasiInfo').textContent = `✅ Lokasi tersimpan dari link Maps (${data.lat.toFixed(5)}, ${data.lng.toFixed(5)})`;
-  } else {
-    toast('❌ '+(data && data.error ? data.error : 'Gagal baca link, coba pakai tombol GPS'));
+  if(data && data.ok && data.found !== false && data.lat !== undefined){
+    document.getElementById('f_lat').value = Number(data.lat).toFixed(6);
+    document.getElementById('f_lng').value = Number(data.lng).toFixed(6);
+    document.getElementById('lokasiInfo').textContent = `✅ Lokasi tersimpan dari link Maps (${Number(data.lat).toFixed(5)}, ${Number(data.lng).toFixed(5)})`;
+  } else if(data){
+    // server normal, tapi koordinat gak kebaca. Link-nya sendiri tetap ikut tersimpan pas Kirim Pendaftaran.
+    document.getElementById('f_lat').value = '';
+    document.getElementById('f_lng').value = '';
+    document.getElementById('lokasiInfo').textContent = '⚠️ Titik di peta gak kebaca dari link ini, TAPI link tetap tersimpan dan muncul di laporan + tombol Buka Maps. Kalau mau rumahnya muncul juga di tab Peta, pakai tombol GPS.';
+    toast('⚠️ Koordinat gak kebaca, link tetap disimpan');
   }
+  // data null = apiCall sudah nampilin pesan errornya sendiri
 }
 
 function exportKML(){
