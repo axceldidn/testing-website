@@ -807,7 +807,7 @@ function toast(msg){
 }
 
 /* ---------------- Backend I/O ---------------- */
-async function apiCall(action, payload){
+async function apiCall(action, payload, _retry){
   if(!CONFIG.API_URL || CONFIG.API_URL.startsWith("GANTI")){
     toast('⚠️ Backend belum diatur (lihat CONFIG di script)');
     setSync(false);
@@ -820,14 +820,19 @@ async function apiCall(action, payload){
     });
     const data = await res.json();
     if(data.code === 'AUTH'){
+      // coba sekali lagi dulu: kadang server baru "ngeh" sesi yang barusan dibuat
+      if(!_retry && USER){
+        await new Promise(r=>setTimeout(r, 1000));
+        return apiCall(action, payload, true);
+      }
       localStorage.removeItem('aisnet_user'); USER = null;
       toast('🔒 Sesi habis, silakan login lagi');
       setTimeout(()=>location.reload(), 1200);
       return null;
     }
     if(data.ok === false){
+      // error bisnis (link Maps gagal, validasi, dll) BUKAN berarti koneksi putus -> jangan tandai Offline
       toast('❌ '+(data.error || 'Gagal, cek kunci akses'));
-      setSync(false);
       return null;
     }
     setSync(true);
