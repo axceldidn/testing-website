@@ -145,6 +145,7 @@ button{font-family:'Inter',sans-serif;}
 .mini-note{font-size:11.5px;color:var(--text-dim);margin:-6px 0 14px;}
 
 /* ---------- Photo ---------- */
+.pickmap{height:270px;border-radius:10px;border:1px solid var(--line);margin-top:8px;z-index:0;}
 .photo-box{
   border:1.5px dashed var(--line);border-radius:10px;padding:16px;text-align:center;
   color:var(--text-dim);font-size:12.5px;cursor:pointer;margin-bottom:12px;position:relative;overflow:hidden;
@@ -369,9 +370,14 @@ button{font-family:'Inter',sans-serif;}
           <label>📍 Lokasi Rumah Client</label>
           <div class="mini-note" style="margin-top:-2px;margin-bottom:8px;">Titik ini yang bikin rumah client muncul di tab Peta. Isi salah satu cara di bawah.</div>
           <button type="button" class="btn btn-outline btn-block" onclick="ambilLokasi()" id="btnLokasi">📍 Ambil Lokasi Saat Ini (GPS)</button>
+          <button type="button" class="btn btn-outline btn-block" style="margin-top:8px;" onclick="bukaPicker('daftar')">🗺️ Pilih Titik di Peta</button>
+          <div id="pickWrap_daftar" class="hide">
+            <div class="mini-note" style="margin:8px 0 0;">Ketuk peta buat taruh pin, geser pin biar pas. Link Google Maps dibuat otomatis dan ikut masuk laporan/Excel.</div>
+            <div id="pickMap_daftar" class="pickmap"></div>
+          </div>
           <div class="mini-note" style="margin-top:10px;margin-bottom:4px;">Atau tempel link share Google Maps dari CS/Sales:</div>
           <div style="display:flex;gap:8px;">
-            <input id="f_mapslink" placeholder="https://maps.app.goo.gl/..." style="flex:1;background:var(--surface2);border:1px solid var(--line);color:var(--text);padding:10px 11px;border-radius:8px;font-size:13px;">
+            <input id="f_mapslink" oninput="this.dataset.auto='';infoLinkMaps()" placeholder="https://maps.app.goo.gl/..." style="flex:1;background:var(--surface2);border:1px solid var(--line);color:var(--text);padding:10px 11px;border-radius:8px;font-size:13px;">
             <button type="button" class="btn btn-info" onclick="ambilDariLinkMaps()" id="btnLinkMaps" style="white-space:nowrap;">🔗 Ambil</button>
           </div>
           <div class="mini-note" id="lokasiInfo" style="margin-top:10px;margin-bottom:0;">⚪ Lokasi belum diisi.</div>
@@ -410,7 +416,14 @@ button{font-family:'Inter',sans-serif;}
         <div class="field"><label>Nama Pelanggan / Mikrotik</label><input id="t_nama" placeholder="cth: Rawagondang.Sarip atau Sarip"></div>
         <div class="field"><label>No HP</label><input id="t_hp" type="tel"></div>
         <div class="field"><label>Alamat</label><input id="t_alamat" placeholder="Alamat rumah/lokasi client"></div>
-        <div class="field"><label>Link Google Maps (opsional)</label><input id="t_mapslink" placeholder="https://maps.app.goo.gl/..."></div>
+        <div class="field"><label>Link Google Maps (opsional)</label>
+          <input id="t_mapslink" oninput="this.dataset.auto=''" placeholder="https://maps.app.goo.gl/...">
+          <button type="button" class="btn btn-outline btn-block" style="margin-top:8px;" onclick="bukaPicker('tiket')">🗺️ Pilih Titik di Peta</button>
+          <div id="pickWrap_tiket" class="hide">
+            <div class="mini-note" style="margin:8px 0 0;">Ketuk peta buat taruh pin, link Maps terisi otomatis.</div>
+            <div id="pickMap_tiket" class="pickmap"></div>
+          </div>
+        </div>
         <div class="field">
           <label>Kendala</label>
           <select id="t_kendala" onchange="toggleKendalaManual()"></select>
@@ -655,7 +668,7 @@ async function checkConnection(){
   try{
     const r = await fetch(CONFIG.API_URL, {
       method:'POST',
-      body: JSON.stringify({ action:'login', key: CONFIG.APP_SECRET_KEY, payload:{ mode:'admin', password:'__test__' } })
+      body: JSON.stringify({ action:'ping', key: CONFIG.APP_SECRET_KEY, payload:{} })
     });
     const data = await r.json();
     let msg;
@@ -712,7 +725,8 @@ async function doLogin(){
     const data = await apiCall('login', { mode:'admin', password: pass });
     btn.disabled = false; btn.textContent = 'Masuk';
     if(!data || !data.ok){ toast('❌ '+(data && data.error ? data.error : 'Password admin salah')); return; }
-    USER = { name: data.nama, role: data.role };
+    if(!data.token){ toast('❌ Server belum versi terbaru (token tidak ada). Deploy ulang .gs dulu.'); return; }
+    USER = { name: data.nama, role: data.role, token: data.token };
     localStorage.setItem('aisnet_user', JSON.stringify(USER));
     enterApp();
     return;
@@ -724,11 +738,13 @@ async function doLogin(){
   const data = await apiCall('login', { nama: name, password: pass });
   btn.disabled = false; btn.textContent = 'Masuk';
   if(!data || !data.ok){ toast('❌ '+(data && data.error ? data.error : 'Nama atau password salah')); return; }
-  USER = { name: data.nama, role: data.role };
+  if(!data.token){ toast('❌ Server belum versi terbaru (token tidak ada). Deploy ulang .gs dulu.'); return; }
+  USER = { name: data.nama, role: data.role, token: data.token };
   localStorage.setItem('aisnet_user', JSON.stringify(USER));
   enterApp();
 }
-function logout(){
+async function logout(){
+  try{ await apiCall('logout', {}); }catch(e){}   // matikan token di server juga
   localStorage.removeItem('aisnet_user');
   location.reload();
 }
@@ -762,8 +778,11 @@ function applyRoleAccess(){
   document.getElementById('tab-'+first).classList.remove('hide');
 }
 (function initSession(){
-  const saved = localStorage.getItem('aisnet_user');
-  if(saved){ USER = JSON.parse(saved); enterApp(); }
+  try{
+    const saved = JSON.parse(localStorage.getItem('aisnet_user') || 'null');
+    if(saved && saved.token){ USER = saved; enterApp(); }
+    else localStorage.removeItem('aisnet_user');   // sesi lama tanpa token -> login ulang
+  }catch(e){ localStorage.removeItem('aisnet_user'); }
 })();
 
 /* ---------------- Nav ---------------- */
@@ -797,9 +816,15 @@ async function apiCall(action, payload){
   try{
     const res = await fetch(CONFIG.API_URL, {
       method:'POST',
-      body: JSON.stringify({ action, key: CONFIG.APP_SECRET_KEY, user: USER, payload })
+      body: JSON.stringify({ action, key: CONFIG.APP_SECRET_KEY, token: USER ? USER.token : undefined, payload })
     });
     const data = await res.json();
+    if(data.code === 'AUTH'){
+      localStorage.removeItem('aisnet_user'); USER = null;
+      toast('🔒 Sesi habis, silakan login lagi');
+      setTimeout(()=>location.reload(), 1200);
+      return null;
+    }
     if(data.ok === false){
       toast('❌ '+(data.error || 'Gagal, cek kunci akses'));
       setSync(false);
@@ -1002,6 +1027,7 @@ async function submitTiket(){
     toast('✅ Laporan gangguan tercatat');
     ['t_nama','t_hp','t_alamat','t_mapslink','t_jamlaporan','t_kendala_manual'].forEach(id=>document.getElementById(id).value='');
     toggleKendalaManual();
+    document.getElementById('t_mapslink').dataset.auto = ''; resetPicker_('tiket');
     loadAll();
   }
 }
@@ -1015,7 +1041,9 @@ async function tanganiTiket(id){
 }
 
 function mapsUrl_(mapsLink, alamat){
-  if(mapsLink) return mapsLink;
+  const l = String(mapsLink||'').trim();
+  if(/^https?:\/\//i.test(l)) return l;                       // hanya http(s) yang boleh jadi link
+  if(/^(www\.)?(maps\.app\.goo\.gl|goo\.gl\/maps|google\.[a-z.]+\/maps)/i.test(l)) return 'https://' + l;
   if(alamat) return 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(alamat);
   return '';
 }
@@ -1029,8 +1057,8 @@ function lokasiMaintenance_(m){
     const x = STATE.pendaftaran.find(p=>p.id===m.pendaftaranId);
     if(x) return { alamat: x.alamatPasang||'', mapsLink: x.mapsLink||'' };
   }
-  if(m.ticketId){
-    const t = STATE.tiket.find(t=>t.id===m.ticketId);
+  if(m.tiketId){
+    const t = STATE.tiket.find(t=>t.id===m.tiketId);
     if(t) return { alamat: t.alamat||'', mapsLink: t.mapsLink||'' };
   }
   return { alamat:'', mapsLink:'' };
@@ -1123,6 +1151,78 @@ function renderPeta(){
   mapObj.invalidateSize();
 }
 
+/* ---- Pilih titik di peta (tanpa perlu link share) ---- */
+const PICK = {};
+function coordLink_(lat,lng){ return `https://www.google.com/maps?q=${Number(lat).toFixed(6)},${Number(lng).toFixed(6)}`; }
+// isi kolom link otomatis, tapi jangan timpa link yang diketik/ditempel orang
+function isiLinkOtomatis_(inputId, lat, lng){
+  const el = document.getElementById(inputId);
+  if(!el.value.trim() || el.dataset.auto === '1'){
+    el.value = coordLink_(lat,lng); el.dataset.auto = '1';
+  }
+}
+function pinSekarang_(target){
+  if(target === 'daftar'){
+    const la = parseFloat(val('f_lat')), ln = parseFloat(val('f_lng'));
+    return (isNaN(la)||isNaN(ln)) ? null : {lat:la, lng:ln};
+  }
+  return coordsDariUrl_(val('t_mapslink'));
+}
+function taruhPin(target, lat, lng, silent){
+  const st = PICK[target];
+  if(!st) return;
+  if(!st.marker){
+    st.marker = L.marker([lat,lng], {
+      draggable:true,
+      icon: L.divIcon({ className:'', iconSize:[0,0],
+        html:'<div style="font-size:32px;line-height:32px;transform:translate(-50%,-100%);">📍</div>' })
+    }).addTo(st.map);
+    st.marker.on('dragend', ()=>{ const p = st.marker.getLatLng(); taruhPin(target, p.lat, p.lng); });
+  } else {
+    st.marker.setLatLng([lat,lng]);
+  }
+  if(silent) return;
+  if(target === 'daftar'){
+    document.getElementById('f_lat').value = Number(lat).toFixed(6);
+    document.getElementById('f_lng').value = Number(lng).toFixed(6);
+    isiLinkOtomatis_('f_mapslink', lat, lng);
+    document.getElementById('lokasiInfo').textContent = `✅ Pin dipilih dari peta (${Number(lat).toFixed(5)}, ${Number(lng).toFixed(5)}) — link Maps dibuat otomatis, titik muncul di tab Peta`;
+  } else {
+    isiLinkOtomatis_('t_mapslink', lat, lng);
+    toast('✅ Titik dipilih, link Maps terisi');
+  }
+}
+function bukaPicker(target){
+  const wrap = document.getElementById('pickWrap_'+target);
+  const nowHidden = wrap.classList.toggle('hide');
+  if(nowHidden) return;
+  if(typeof L === 'undefined'){ toast('Peta belum termuat (butuh internet)'); wrap.classList.add('hide'); return; }
+  let st = PICK[target];
+  if(!st){
+    const map = L.map('pickMap_'+target).setView([-6.0023, 106.0111], 13); // Cilegon
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19, attribution:'© OpenStreetMap' }).addTo(map);
+    st = PICK[target] = { map, marker:null };
+    map.on('click', e=>taruhPin(target, e.latlng.lat, e.latlng.lng));
+  }
+  setTimeout(()=>st.map.invalidateSize(), 80);
+  const cur = pinSekarang_(target);
+  if(cur){
+    taruhPin(target, cur.lat, cur.lng, true);
+    st.map.setView([cur.lat, cur.lng], 17);
+  } else if(navigator.permissions && navigator.geolocation){
+    // kalau izin lokasi sudah pernah diberikan, peta langsung mulai dari posisi HP
+    navigator.permissions.query({name:'geolocation'}).then(p=>{
+      if(p.state === 'granted') navigator.geolocation.getCurrentPosition(
+        pos=>st.map.setView([pos.coords.latitude, pos.coords.longitude], 16), ()=>{}, {timeout:8000});
+    }).catch(()=>{});
+  }
+}
+function resetPicker_(target){
+  const st = PICK[target];
+  if(st && st.marker){ st.map.removeLayer(st.marker); st.marker = null; }
+  document.getElementById('pickWrap_'+target).classList.add('hide');
+}
+
 function ambilLokasi(){
   if(!navigator.geolocation){ toast('HP/browser ini tidak mendukung GPS'); return; }
   const btn = document.getElementById('btnLokasi');
@@ -1130,7 +1230,8 @@ function ambilLokasi(){
   navigator.geolocation.getCurrentPosition(pos=>{
     document.getElementById('f_lat').value = pos.coords.latitude.toFixed(6);
     document.getElementById('f_lng').value = pos.coords.longitude.toFixed(6);
-    document.getElementById('lokasiInfo').textContent = `✅ Lokasi tersimpan dari GPS (${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)})`;
+    isiLinkOtomatis_('f_mapslink', pos.coords.latitude, pos.coords.longitude);
+    document.getElementById('lokasiInfo').textContent = `✅ Lokasi tersimpan dari GPS (${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}) — link Maps dibuat otomatis`;
     btn.disabled = false; btn.textContent = '📍 Ambil Lokasi Saat Ini (GPS)';
   }, err=>{
     toast('❌ Gagal ambil lokasi: '+err.message);
@@ -1138,25 +1239,52 @@ function ambilLokasi(){
   }, { enableHighAccuracy:true, timeout:15000 });
 }
 
+function infoLinkMaps(){
+  const link = document.getElementById('f_mapslink').value.trim();
+  if(!link) return;
+  if(!/^(https?:\/\/)?(www\.)?(maps\.app\.goo\.gl|goo\.gl\/maps|maps\.google\.|google\.[a-z.]+\/maps)/i.test(link)){
+    document.getElementById('lokasiInfo').textContent = '⚠️ Itu kayaknya bukan link Google Maps.';
+    return;
+  }
+  const hasPin = document.getElementById('f_lat').value;
+  document.getElementById('lokasiInfo').textContent = hasPin
+    ? document.getElementById('lokasiInfo').textContent
+    : '✅ Link Maps terisi — ikut tersimpan ke laporan/Excel dan jadi tombol Buka Maps buat teknisi. (Klik Ambil kalau mau titiknya muncul di tab Peta)';
+}
+
+function coordsDariUrl_(u){
+  let s = u; try{ s = decodeURIComponent(u); }catch(e){}
+  const n = '(-?\\d{1,3}\\.\\d+)';
+  const pats = [new RegExp('@'+n+','+n), new RegExp('!3d'+n+'!4d'+n), new RegExp('[?&](?:q|query|ll|sll|center|destination|daddr)='+n+',\\s*'+n)];
+  for(const re of pats){ const m = s.match(re); if(m) return {lat:parseFloat(m[1]), lng:parseFloat(m[2])}; }
+  return null;
+}
+
 async function ambilDariLinkMaps(){
   const link = document.getElementById('f_mapslink').value.trim();
   if(!link){ toast('Tempel link Google Maps dulu'); return; }
+  const setPin = (lat,lng,src)=>{
+    document.getElementById('f_lat').value = Number(lat).toFixed(6);
+    document.getElementById('f_lng').value = Number(lng).toFixed(6);
+    document.getElementById('lokasiInfo').textContent = `✅ Lokasi tersimpan dari ${src} (${Number(lat).toFixed(5)}, ${Number(lng).toFixed(5)})`;
+  };
+  // link panjang yang sudah ada koordinatnya: gak perlu tanya server
+  const lokal = coordsDariUrl_(link);
+  if(lokal){ setPin(lokal.lat, lokal.lng, 'link Maps'); return; }
+
   const btn = document.getElementById('btnLinkMaps');
   btn.disabled = true; btn.textContent = '⏳...';
   const data = await apiCall('resolveMapsLink', { link });
   btn.disabled = false; btn.textContent = '🔗 Ambil';
   if(data && data.ok && data.found !== false && data.lat !== undefined){
-    document.getElementById('f_lat').value = Number(data.lat).toFixed(6);
-    document.getElementById('f_lng').value = Number(data.lng).toFixed(6);
-    document.getElementById('lokasiInfo').textContent = `✅ Lokasi tersimpan dari link Maps (${Number(data.lat).toFixed(5)}, ${Number(data.lng).toFixed(5)})`;
+    setPin(data.lat, data.lng, 'link Maps');
   } else if(data){
-    // server normal, tapi koordinat gak kebaca. Link-nya sendiri tetap ikut tersimpan pas Kirim Pendaftaran.
+    // link tetap ikut tersimpan pas Kirim; yang kurang cuma titik di tab Peta
     document.getElementById('f_lat').value = '';
     document.getElementById('f_lng').value = '';
-    document.getElementById('lokasiInfo').textContent = '⚠️ Titik di peta gak kebaca dari link ini, TAPI link tetap tersimpan dan muncul di laporan + tombol Buka Maps. Kalau mau rumahnya muncul juga di tab Peta, pakai tombol GPS.';
-    toast('⚠️ Koordinat gak kebaca, link tetap disimpan');
+    document.getElementById('lokasiInfo').textContent = '✅ Link Maps tersimpan — masuk laporan/Excel dan jadi tombol Buka Maps buat teknisi. Cuma titik di tab Peta yang belum ada (Google gak ngasih koordinat dari link ini); pakai tombol GPS kalau perlu.';
+    toast('✅ Link tersimpan (titik Peta belum kebaca)');
   }
-  // data null = apiCall sudah nampilin pesan errornya sendiri
 }
 
 function exportKML(){
@@ -1165,7 +1293,7 @@ function exportKML(){
   const placemarks = pts.map(x=>`
     <Placemark>
       <name>${esc(x.nama)}</name>
-      <description>${esc(x.alamatPasang||'')} | ${esc(x.paket||'')} | Status: ${esc(x.status)}</description>
+      <description>${esc(x.alamatPasang||'')} | ${esc(x.paket||'')} | Status: ${esc(x.status)} | Maps: ${esc(mapsUrl_(x.mapsLink, x.alamatPasang) || coordLink_(x.lat, x.lng))}</description>
       <Point><coordinates>${x.lng},${x.lat},0</coordinates></Point>
     </Placemark>`).join('');
   const kml = `<?xml version="1.0" encoding="UTF-8"?>
@@ -1248,7 +1376,8 @@ async function submitPendaftaran(){
     nama: val('f_nama'), alamatKtp: val('f_alamatktp'), alamatPasang: val('f_alamatpasang'),
     noHp: val('f_hp'), paket: getPaketValue(), ssid: val('f_ssid'), password: val('f_pass'),
     tglPemasangan: val('f_tgl'), noOdc: val('f_odc'), noOdp: val('f_odp'), statusTinggal: val('f_status'),
-    lat: val('f_lat'), lng: val('f_lng'), mapsLink: val('f_mapslink'),
+    lat: val('f_lat'), lng: val('f_lng'),
+    mapsLink: val('f_mapslink') || ((val('f_lat') && val('f_lng')) ? coordLink_(val('f_lat'), val('f_lng')) : ''),
     files: filesPayload('daftar')
   };
   if(!payload.nama || !payload.noHp){ toast('Nama dan No HP wajib diisi'); return; }
@@ -1259,6 +1388,7 @@ async function submitPendaftaran(){
     document.getElementById('f_paket').value = document.getElementById('f_paket').options[0].value;
     togglePaketManual();
     document.getElementById('lokasiInfo').textContent = '⚪ Lokasi belum diisi.';
+    document.getElementById('f_mapslink').dataset.auto = ''; resetPicker_('daftar');
     FILES.daftar = []; renderFiles('daftar');
     loadAll();
   }
@@ -1446,19 +1576,33 @@ async function doGantiPassword(){
   if(oldPassword===null) return;
   const newPassword = prompt('Password baru:');
   if(!newPassword) return;
-  const nama = USER.role === 'Admin' ? 'admin' : USER.name;
-  const data = await apiCall('changeOwnPassword', { nama, oldPassword, newPassword });
-  if(data && data.ok) toast('✅ Password berhasil diganti');
+  if(newPassword.length < 6){ toast('Password baru minimal 6 karakter'); return; }
+  const data = await apiCall('changeOwnPassword', { oldPassword, newPassword });
+  if(data && data.ok){
+    if(data.token){ USER.token = data.token; localStorage.setItem('aisnet_user', JSON.stringify(USER)); }
+    toast('✅ Password berhasil diganti (perangkat lain otomatis keluar)');
+  }
 }
 
 
+function csvCell_(c){
+  if(c && typeof c === 'object' && 'link' in c){
+    const u = c.link || '';
+    if(/^https?:\/\/[^\s"]+$/.test(u)) return `"${`=HYPERLINK("${u}")`.replace(/"/g,'""')}"`;  // link bisa diklik di Excel
+    c = u;
+  }
+  let s = String(c===undefined||c===null ? '' : c);
+  // teks berawalan = + - @ dieksekusi Excel sebagai rumus -> jadikan teks biasa
+  if(/^[=+\-@\t\r]/.test(s) && !/^[+\-]?\d+([.,]\d+)?$/.test(s)) s = "'" + s;
+  return `"${s.replace(/"/g,'""')}"`;
+}
 function exportExcel(){
   const rows = [['Client','Alamat','Link Maps','ISP','STTS','Teknisi','Stok','Redaman','Modem','Adaptor','Patchcore','Barrel','Kabel(m)','Jam Laporan','Jam Selesai','Durasi','Keterangan','Waktu Input']];
   STATE.maintenance.forEach(m=>{
     const lok = lokasiMaintenance_(m);
-    rows.push([m.client,lok.alamat,mapsUrl_(lok.mapsLink, lok.alamat),m.isp,m.stts,m.teknisi,m.stok,m.redaman,m.modem,m.adaptor,m.patchcore,m.barrel,m.kabel,m.jamLaporan,m.jamSelesai,m.durasi,m.keterangan,m.timestamp]);
+    rows.push([m.client,lok.alamat,{link: mapsUrl_(lok.mapsLink, lok.alamat)},m.isp,m.stts,m.teknisi,m.stok,m.redaman,m.modem,m.adaptor,m.patchcore,m.barrel,m.kabel,m.jamLaporan,m.jamSelesai,m.durasi,m.keterangan,m.timestamp]);
   });
-  const csv = rows.map(r=>r.map(c=>`"${String(c===undefined?'':c).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const csv = rows.map(r=>r.map(csvCell_).join(',')).join('\n');
   const blob = new Blob(["\ufeff"+csv], {type:'text/csv;charset=utf-8;'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
