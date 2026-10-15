@@ -4,6 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AIS.NET — Gudang Digital</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#081726">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Gudang AIS">
+<link rel="apple-touch-icon" href="icon-192.png">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <style>
@@ -283,7 +289,7 @@
       <div class="login-scan-box">
         <div class="lbl">Scan kartu ID teknisi</div>
         <input id="cardScanInput" placeholder="Arahkan scanner ke sini..." autocomplete="off">
-        <button class="cam-scan-btn" data-camtarget="login">📷 Scan Pakai Kamera</button>
+        <button class="cam-scan-btn" data-camtarget="login">📷 Scan Barcode / QR (opsional)</button>
         <button class="cam-scan-btn" data-filetarget="login" style="margin-top:6px;">📁 Upload Gambar Barcode</button>
       </div>
     </div>
@@ -358,17 +364,17 @@
         <div class="card">
           <h3 class="section">Scan Barang Keluar</h3>
           <div class="scan-box">
-            <input id="scanInput" type="text" placeholder="Arahkan scanner ke sini..." autocomplete="off">
-            <div class="hint">Kursor harus tetap di kotak ini supaya scanner terbaca</div>
+            <div class="hint" style="margin-bottom:8px;">Pilih barang dari daftar di bawah, atau scan (opsional)</div>
+            <div id="manualSearchBox" style="margin-top:0;">
+              <input id="manualSearchInput" type="text" placeholder="Cari / pilih barang..." autocomplete="off" style="width:100%;padding:10px;border-radius:7px;border:1px solid var(--line);">
+              <div id="manualSearchResults" style="max-height:260px;overflow-y:auto;margin-top:6px;"></div>
+            </div>
+            <input id="scanInput" type="text" placeholder="Scanner fisik (opsional)..." autocomplete="off" style="margin-top:10px;">
             <div class="flash" id="flashMsg"></div>
             <button class="cam-scan-btn" data-camtarget="scan">📷 Scan Pakai Kamera</button>
             <button class="cam-scan-btn" data-filetarget="scan" style="margin-top:6px;">📁 Upload Gambar Barcode Barang</button>
             <div style="font-size:11px;color:#8fb3c2;text-align:center;margin-top:6px;font-family:var(--mono);">Gambar barcode barang bisa dikirim admin lewat WA, lalu upload di sini</div>
-            <button id="manualSearchToggle" class="cam-scan-btn" style="margin-top:6px;">🔍 Barcode nggak kebaca? Cari manual</button>
-            <div id="manualSearchBox" class="hidden" style="margin-top:8px;">
-              <input id="manualSearchInput" type="text" placeholder="Ketik nama barang..." autocomplete="off" style="width:100%;padding:10px;border-radius:7px;border:1px solid var(--line);">
-              <div id="manualSearchResults" style="max-height:220px;overflow-y:auto;margin-top:6px;"></div>
-            </div>
+            
           </div>
           <div id="queueArea"></div>
         </div>
@@ -514,7 +520,7 @@
 
       <!-- ============ DASHBOARD ============ -->
       <div class="page hidden" id="page-dashboard">
-        <div style="margin-bottom:12px;"><button class="btn btn-primary" id="dashExportBtn">⬇ Export Dashboard ke Excel</button></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;"><button class="btn btn-primary" id="dashExportBtn">⬇ Export Excel</button><button class="btn btn-primary" id="dashPdfBtn">⬇ Export PDF</button></div>
         <div class="stat-grid">
           <div class="stat-card"><div class="lbl">Total Jenis Barang</div><b id="dashTotalItems">0</b></div>
           <div class="stat-card"><div class="lbl">Total Stok (qty)</div><b id="dashTotalStock">0</b></div>
@@ -919,13 +925,13 @@ function openCameraScan(target){
   }
 
   camScannerInstance = new Html5Qrcode('cameraScanRegion', {
-    formatsToSupport: [ Html5QrcodeSupportedFormats.CODE_39, Html5QrcodeSupportedFormats.CODE_128, Html5QrcodeSupportedFormats.EAN_13 ],
+    formatsToSupport: [ Html5QrcodeSupportedFormats.CODE_39, Html5QrcodeSupportedFormats.CODE_128, Html5QrcodeSupportedFormats.EAN_13, Html5QrcodeSupportedFormats.QR_CODE ],
     verbose: false
   });
 
   camScannerInstance.start(
     { facingMode: 'environment' },
-    { fps: 10, qrbox: { width: 260, height: 140 } },
+    { fps: 10, qrbox: { width: 260, height: 180 } },
     (decodedText)=>{
       if(camScanLocked) return; // barcode sudah kebaca sebelumnya, abaikan pembacaan berulang
       camScanLocked = true;
@@ -1008,7 +1014,7 @@ $('fileScanInput').addEventListener('change', (e)=>{
   toast('Membaca barcode dari gambar...');
   const target = fileScanTarget;
   const scanner = new Html5Qrcode('fileScanRegion', {
-    formatsToSupport: [ Html5QrcodeSupportedFormats.CODE_39, Html5QrcodeSupportedFormats.CODE_128, Html5QrcodeSupportedFormats.EAN_13 ],
+    formatsToSupport: [ Html5QrcodeSupportedFormats.CODE_39, Html5QrcodeSupportedFormats.CODE_128, Html5QrcodeSupportedFormats.EAN_13, Html5QrcodeSupportedFormats.QR_CODE ],
     verbose: false
   });
 
@@ -1365,7 +1371,14 @@ function handleScan(code){
 }
 
 // Fallback manual — buat kasus barcode fisik pudar/rusak/salah kebaca scanner
-$('manualSearchToggle').addEventListener('click', ()=>{
+
+// Total bersih teknisi = pengeluaran - retur (retur dicatat di Barang Masuk jenis 'retur', supplier 'Retur: <nama>')
+function returQtyTeknisi(name, rangeFn){
+  return masukLogs.filter(r=>r.jenis==='retur' && String(r.supplier||'').replace(/^Retur:\s*/,'')===name && (!rangeFn || rangeFn(r.date)))
+    .reduce((s,r)=>s+(r.qty||0),0);
+}
+function renderManualList(){ $('manualSearchInput').dispatchEvent(new Event('input')); }
+if(false) $('manualSearchInput').addEventListener('click', ()=>{
   const box = $('manualSearchBox');
   box.classList.toggle('hidden');
   if(!box.classList.contains('hidden')){ $('manualSearchInput').value=''; $('manualSearchResults').innerHTML=''; $('manualSearchInput').focus(); }
@@ -1373,18 +1386,18 @@ $('manualSearchToggle').addEventListener('click', ()=>{
 $('manualSearchInput').addEventListener('input', e=>{
   const q = e.target.value.trim().toLowerCase();
   const box = $('manualSearchResults');
-  if(!q){ box.innerHTML=''; return; }
-  const matches = products.filter(p=> p.name.toLowerCase().includes(q) || p.code.toLowerCase().includes(q)).slice(0,15);
+  const matches = (q ? products.filter(p=> p.name.toLowerCase().includes(q) || p.code.toLowerCase().includes(q)) : [...products].sort((a,b)=>String(a.name).localeCompare(String(b.name),'id'))).slice(0,60);
   box.innerHTML = matches.map(p=>`<div class="manual-result" data-code="${escapeHtml(p.code)}" style="padding:9px 10px;border:1px solid var(--line);border-radius:7px;margin-top:5px;cursor:pointer;background:#fff;">
       <b>${escapeHtml(p.name)}</b><br><span style="font-size:11px;color:var(--muted);">${p.code} — Stok: ${p.stok}</span>
     </div>`).join('') || `<div style="padding:8px;color:var(--muted);font-size:13px;">Nggak ketemu</div>`;
   box.querySelectorAll('.manual-result').forEach(el=>{
     el.addEventListener('click', ()=>{
       handleScan(el.dataset.code);
-      $('manualSearchBox').classList.add('hidden');
     });
   });
 });
+
+const _rr0 = renderRecent; renderRecent = function(){ _rr0.apply(this,arguments); try{ renderManualList(); }catch(e){} };
 
 function renderQueue(){
   const area = $('queueArea');
@@ -1519,8 +1532,9 @@ function pdfWrap(text, maxW, size, bold){
 function pdfBytes(s){ const u = new Uint8Array(s.length); for(let i=0;i<s.length;i++) u[i] = s.charCodeAt(i) & 255; return u; }
 function pdfB64ToBytes(b64){ const bin = atob(b64); const u = new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u[i] = bin.charCodeAt(i); return u; }
 
-// o = { title, headerLines:[{text,size,bold}], infoLines:[text], columns:[{label,w,align}],
-//       rows:[[ "teks" | {t,color,bold} ]], logo:{b64,w,h}|null, footerLeft, docTitle }
+// o = { title, headerLines:[{text,size,bold}], infoLines:[text], logo:{b64,w,h}|null, footerLeft, docTitle,
+//       sections:[ {cards:[{label,value,color}]} | {title,note,columns:[{label,w,align}],rows:[[ "teks" | {t,color,bold} ]],emptyText} ] }
+//   (atau satu tabel saja lewat o.columns + o.rows)
 function buildTablePdf(o){
   const PW = 595.28, PH = 841.89, M = 40, BOTTOM = 52, PAD = 6, FS = 9, LH = 11;
   const col = c => (c[0]/255).toFixed(3)+' '+(c[1]/255).toFixed(3)+' '+(c[2]/255).toFixed(3);
@@ -1558,42 +1572,77 @@ function buildTablePdf(o){
   (o.infoLines||[]).forEach(t=>{ T(M, y, pdfClean(t), 9, false, [90,105,118]); y += 13; });
   y += 8;
 
-  // ---- tabel
-  const cols = o.columns;
-  const totalW = cols.reduce((s,c)=>s+c.w,0);
-  const drawHead = () => {
-    R(M, y, totalW, 20, [12,35,56]);
-    let x = M;
-    cols.forEach(c=>{
-      const lab = pdfClean(c.label);
-      const tw = pdfTextWidth(lab, FS, true);
-      const tx = c.align==='right' ? x + c.w - PAD - tw : (c.align==='center' ? x + (c.w - tw)/2 : x + PAD);
-      T(tx, y+13.5, lab, FS, true, [255,255,255]);
-      x += c.w;
+  // ---- isi: kartu ringkasan & tabel (boleh beberapa bagian, tiap bagian punya judul)
+  const need = h => { if(y + h > PH - BOTTOM) newPage(); };
+  const drawCards = items => {
+    const gap = 10, n = items.length, ch = 50;
+    const cw = (PW - 2*M - gap*(n-1)) / n;
+    need(ch + 16);
+    items.forEach((it, i)=>{
+      const x = M + i*(cw+gap);
+      const c = it.color || [18,137,179];
+      R(x, y, cw, ch, [243,248,251]);
+      R(x, y, 4, ch, c);
+      T(x+14, y+25, pdfClean(String(it.value)), 18, true, it.color || [8,23,38]);
+      T(x+14, y+40, pdfClean(it.label), 8, false, [90,105,118]);
     });
-    y += 20;
+    y += ch + 18;
   };
-  drawHead();
-  o.rows.forEach((row, ri)=>{
-    const cells = row.map((cell, ci)=>{
-      const c = (cell && typeof cell==='object') ? cell : {t:cell};
-      return { lines: pdfWrap(c.t==null ? '' : String(c.t), cols[ci].w - PAD*2, FS, !!c.bold), bold: !!c.bold, color: c.color || [30,40,50] };
-    });
-    const rh = Math.max(...cells.map(c=>c.lines.length)) * LH + 8;
-    if(y + rh > PH - BOTTOM){ newPage(); drawHead(); }
-    if(ri % 2 === 1) R(M, y, totalW, rh, [243,248,251]);
-    let x = M;
-    cells.forEach((c, ci)=>{
-      c.lines.forEach((line, li)=>{
-        const tw = pdfTextWidth(line, FS, c.bold);
-        const al = cols[ci].align;
-        const tx = al==='right' ? x + cols[ci].w - PAD - tw : (al==='center' ? x + (cols[ci].w - tw)/2 : x + PAD);
-        T(tx, y + 4 + FS*0.85 + li*LH, line, FS, c.bold, c.color);
+  const drawSection = sec => {
+    const cols = sec.columns;
+    const totalW = cols.reduce((s,c)=>s+c.w,0);
+    const drawHead = () => {
+      R(M, y, totalW, 20, [12,35,56]);
+      let x = M;
+      cols.forEach(c=>{
+        const lab = pdfClean(c.label);
+        const tw = pdfTextWidth(lab, FS, true);
+        const tx = c.align==='right' ? x + c.w - PAD - tw : (c.align==='center' ? x + (c.w - tw)/2 : x + PAD);
+        T(tx, y+13.5, lab, FS, true, [255,255,255]);
+        x += c.w;
       });
-      x += cols[ci].w;
+      y += 20;
+    };
+    if(sec.title){
+      need(20 + (sec.note ? 12 : 0) + 20 + 26);     // judul tidak boleh sendirian di dasar halaman
+      R(M, y+1, 3, 13, [18,137,179]);
+      T(M+10, y+11.5, pdfClean(sec.title), 11, true, [8,23,38]);
+      y += 20;
+      if(sec.note){ T(M+10, y+1, pdfClean(sec.note), 8, false, [90,105,118]); y += 12; }
+    } else {
+      need(46);
+    }
+    drawHead();
+    if(!sec.rows.length){
+      T(M+PAD, y+15, pdfClean(sec.emptyText || 'Tidak ada data'), FS, false, [120,135,148]);
+      L(M, y+22, M+totalW, [219,230,236], 0.5);
+      y += 22;
+    }
+    sec.rows.forEach((row, ri)=>{
+      const cells = row.map((cell, ci)=>{
+        const c = (cell && typeof cell==='object') ? cell : {t:cell};
+        return { lines: pdfWrap(c.t==null ? '' : String(c.t), cols[ci].w - PAD*2, FS, !!c.bold), bold: !!c.bold, color: c.color || [30,40,50] };
+      });
+      const rh = Math.max(...cells.map(c=>c.lines.length)) * LH + 8;
+      if(y + rh > PH - BOTTOM){ newPage(); drawHead(); }
+      if(ri % 2 === 1) R(M, y, totalW, rh, [243,248,251]);
+      let x = M;
+      cells.forEach((c, ci)=>{
+        c.lines.forEach((line, li)=>{
+          const tw = pdfTextWidth(line, FS, c.bold);
+          const al = cols[ci].align;
+          const tx = al==='right' ? x + cols[ci].w - PAD - tw : (al==='center' ? x + (cols[ci].w - tw)/2 : x + PAD);
+          T(tx, y + 4 + FS*0.85 + li*LH, line, FS, c.bold, c.color);
+        });
+        x += cols[ci].w;
+      });
+      L(M, y+rh, M+totalW, [219,230,236], 0.5);
+      y += rh;
     });
-    L(M, y+rh, M+totalW, [219,230,236], 0.5);
-    y += rh;
+    y += 18;
+  };
+  (o.sections || [{ columns:o.columns, rows:o.rows }]).forEach(sec=>{
+    if(sec.cards) drawCards(sec.cards); else drawSection(sec);
   });
 
   // ---- footer + nomor halaman
@@ -1629,7 +1678,7 @@ function buildTablePdf(o){
     addS('<< /Type /XObject /Subtype /Image /Width '+o.logo.w+' /Height '+o.logo.h+' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length '+jpg.length+' >>\nstream\n');
     add(jpg); addS('\nendstream\nendobj\n');
   }
-  begin(infoId); addS('<< /Title ('+pdfEsc(pdfClean(o.docTitle||o.title))+') /Producer (AIS.NET Gudang) >>\nendobj\n');
+  begin(infoId); addS('<< /Title ('+pdfEsc(String(o.docTitle||o.title).replace(/[^\x20-\x7E]/g,'-'))+') /Producer (AIS.NET Gudang) >>\nendobj\n');
   pages.forEach((p, i)=>{
     const content = p.join('\n');
     begin(pageIds[i]);
@@ -2414,7 +2463,7 @@ function renderDashboard(){
   });
   $('dashTechBody').innerHTML = teknisiList.map(t=>{
     const theirLogs = keluarLogs.filter(r=>r.teknisi===t.name && inRange(r.date, dashTeknisiRange));
-    const total = theirLogs.reduce((s,r)=>s+(r.qty||0),0);
+    const total = theirLogs.reduce((s,r)=>s+(r.qty||0),0) - returQtyTeknisi(t.name, d=>inRange(d, dashTeknisiRange));
     const last = theirLogs.length ? theirLogs.map(r=>r.date).sort().slice(-1)[0] : '-';
     return `<tr><td>${escapeHtml(t.name)}</td><td style="font-family:var(--mono);font-size:11px;">${t.id}</td><td style="text-align:right;">${total}</td><td>${last}</td></tr>`;
   }).join('');
@@ -2426,18 +2475,32 @@ function renderDashboard(){
   `).join('');
 }
 
+// Data dashboard untuk export (dipakai Excel & PDF)
+function dashExportData(){
+  const now = new Date();
+  const tgl = now.toLocaleDateString('id-ID',{day:'2-digit',month:'long',year:'numeric'});
+  const rangeLabel = {today:'Hari Ini','7d':'7 Hari Terakhir','30d':'30 Hari Terakhir',all:'Semua'}[dashTeknisiRange] || 'Semua';
+  // yang paling genting (minus / habis) di urutan atas
+  const lowStock = products.filter(p=>p.stok<=5).sort((a,b)=> a.stok-b.stok || String(a.name).localeCompare(String(b.name),'id'));
+  const today = todayStr();
+  const todayOut = keluarLogs.filter(r=>r.date===today).reduce((s,r)=>s+(r.qty||0),0);
+  const totalStok = products.reduce((s,p)=>s+(p.stok||0),0);
+  const minusCount = products.filter(p=>p.stok<0).length;
+  const teknisi = users.filter(u=>u.role==='teknisi').map(t=>{
+    const theirLogs = keluarLogs.filter(r=>r.teknisi===t.name && inRange(r.date, dashTeknisiRange));
+    const total = theirLogs.reduce((sum,r)=>sum+(r.qty||0),0) - returQtyTeknisi(t.name, d=>inRange(d, dashTeknisiRange));
+    const last = theirLogs.length ? theirLogs.map(r=>r.date).sort().slice(-1)[0] : '-';
+    return { name:t.name, id:t.id, total, last };
+  });
+  const logins = [...loginLog].reverse().slice(0,15);
+  return { tgl, rangeLabel, lowStock, todayOut, totalStok, minusCount, teknisi, logins };
+}
+
 // Export seluruh isi dashboard: satu file Excel, tiap bagian satu sheet
 $('dashExportBtn').addEventListener('click', ()=>{
   if(typeof XLSX === 'undefined' || !XLSX.utils){ toast('Library Excel belum termuat — cek internet lalu coba lagi','error'); return; }
-  const now = new Date();
-  const tgl = now.toLocaleDateString('id-ID',{day:'2-digit',month:'long',year:'numeric'});
-  const head = (title, extra) => [[companyInfo.name], [title], ['Dicetak', `${tgl} ${nowTime()}`], ...(extra||[]), []];
-  const statusOf = n => stokStatus(n).label;
-  const rangeLabel = {today:'Hari Ini','7d':'7 Hari Terakhir','30d':'30 Hari Terakhir',all:'Semua'}[dashTeknisiRange] || 'Semua';
-
-  const lowStock = products.filter(p=>p.stok<=5);
-  const today = todayStr();
-  const todayOut = keluarLogs.filter(r=>r.date===today).reduce((s,r)=>s+(r.qty||0),0);
+  const d = dashExportData();
+  const head = (title, extra) => [[companyInfo.name], [title], ['Dicetak', `${d.tgl} ${nowTime()}`], ...(extra||[]), []];
   const wb = XLSX.utils.book_new();
   const addSheet = (name, rows, cols) => {
     const ws = XLSX.utils.aoa_to_sheet(rows);
@@ -2449,38 +2512,88 @@ $('dashExportBtn').addEventListener('click', ()=>{
     ...head('RINGKASAN DASHBOARD GUDANG'),
     ['Keterangan','Nilai'],
     ['Total Jenis Barang', products.length],
-    ['Total Stok (qty)', products.reduce((s,p)=>s+(p.stok||0),0)],
-    ['Hampir Habis (stok ≤ 5)', lowStock.length],
-    ['Stok Minus', products.filter(p=>p.stok<0).length],
-    ['Keluar Hari Ini (pcs)', todayOut]
+    ['Total Stok (qty)', d.totalStok],
+    ['Hampir Habis (stok ≤ 5)', d.lowStock.length],
+    ['Stok Minus', d.minusCount],
+    ['Keluar Hari Ini (pcs)', d.todayOut]
   ], [32,14]);
 
   addSheet('Hampir Habis', [
     ...head('BARANG HAMPIR HABIS (STOK ≤ 5)'),
     ['No','Nama Barang','Kode','Stok','Status'],
-    ...(lowStock.length ? lowStock.map((p,i)=>[i+1, p.name, p.code, p.stok, statusOf(p.stok)]) : [['','Aman — tidak ada barang yang hampir habis']])
-  ], [6,40,14,10,12]);
+    ...(d.lowStock.length ? d.lowStock.map((p,i)=>[i+1, p.name, p.code, p.stok, stokStatus(p.stok).label]) : [['','Aman — tidak ada barang yang hampir habis']])
+  ], [6,40,14,10,14]);
 
-  const teknisiList = users.filter(u=>u.role==='teknisi');
   addSheet('Ringkasan Teknisi', [
-    ...head('RINGKASAN TEKNISI', [['Periode', rangeLabel]]),
+    ...head('RINGKASAN TEKNISI', [['Periode', d.rangeLabel]]),
     ['Nama','ID','Total Ambil (qty)','Aktivitas Terakhir'],
-    ...teknisiList.map(t=>{
-      const theirLogs = keluarLogs.filter(r=>r.teknisi===t.name && inRange(r.date, dashTeknisiRange));
-      const total = theirLogs.reduce((sum,r)=>sum+(r.qty||0),0);
-      const last = theirLogs.length ? theirLogs.map(r=>r.date).sort().slice(-1)[0] : '-';
-      return [t.name, t.id, total, last];
-    })
+    ...d.teknisi.map(t=>[t.name, t.id, t.total, t.last])
   ], [24,12,18,18]);
 
   addSheet('Login Terakhir', [
     ...head('AKTIVITAS LOGIN TERAKHIR'),
     ['Nama','Role','Tanggal','Jam'],
-    ...[...loginLog].reverse().slice(0,15).map(l=>[l.name, l.role==='admin'?'Admin':'Teknisi', l.date, l.time])
+    ...d.logins.map(l=>[l.name, l.role==='admin'?'Admin':'Teknisi', l.date, l.time])
   ], [24,12,14,10]);
 
   XLSX.writeFile(wb, `Dashboard_AIS_${todayStr()}.xlsx`);
   toast('Dashboard berhasil diexport ke Excel', 'success');
+});
+
+// Export PDF dashboard: kartu ringkasan + 3 tabel, gaya sama dengan PDF Stok
+$('dashPdfBtn').addEventListener('click', ()=>{
+  try{
+    const d = dashExportData();
+    const colors = {habis:[192,57,43], hampir:[181,114,15], minus:[122,12,12], aman:[31,157,99]};
+    const headerLines = [
+      {text:companyInfo.name, size:13, bold:true},
+      {text:companyInfo.address, size:8},
+      {text:`Email: ${companyInfo.email} | Phone: ${companyInfo.phone}`, size:8}
+    ];
+    const social = [];
+    if(companyInfo.facebook) social.push(`FB: ${companyInfo.facebook}`);
+    if(companyInfo.instagram) social.push(`IG: ${companyInfo.instagram}`);
+    if(social.length) headerLines.push({text:social.join(' | '), size:8});
+    const bytes = buildTablePdf({
+      title: 'RINGKASAN DASHBOARD GUDANG',
+      docTitle: 'Ringkasan Dashboard Gudang — ' + companyInfo.name,
+      headerLines,
+      infoLines: [
+        `Dicetak: ${d.tgl} ${nowTime()}`,
+        `Stok minus: ${d.minusCount} barang   |   Periode ringkasan teknisi: ${d.rangeLabel}`
+      ],
+      sections: [
+        { cards: [
+          {label:'Total Jenis Barang', value:products.length, color:[18,137,179]},
+          {label:'Total Stok (qty)', value:d.totalStok, color:[31,157,99]},
+          {label:'Hampir Habis (1-5)', value:d.lowStock.length, color:[181,114,15]},
+          {label:'Keluar Hari Ini (pcs)', value:d.todayOut, color:[192,57,43]}
+        ]},
+        { title:'Barang Hampir Habis', note:'Stok 5 ke bawah, termasuk yang Habis dan Minus (paling genting di atas)',
+          columns:[{label:'No',w:32,align:'center'},{label:'Nama Barang',w:251},{label:'Kode',w:82},{label:'Stok',w:60,align:'right'},{label:'Status',w:90,align:'center'}],
+          rows: d.lowStock.map((p,i)=>{
+            const st = stokStatus(p.stok);
+            return [String(i+1), p.name, p.code, {t:String(p.stok), bold:true, color:colors[st.cls]}, {t:st.label, bold:true, color:colors[st.cls]}];
+          }),
+          emptyText:'Aman — tidak ada barang yang hampir habis' },
+        { title:'Ringkasan Teknisi', note:`Periode: ${d.rangeLabel}`,
+          columns:[{label:'Nama',w:215},{label:'ID',w:90},{label:'Total Ambil (qty)',w:100,align:'right'},{label:'Aktivitas Terakhir',w:110,align:'center'}],
+          rows: d.teknisi.map(t=>[t.name, t.id, String(t.total), t.last]),
+          emptyText:'Belum ada teknisi terdaftar' },
+        { title:'Aktivitas Login Terakhir', note:'15 login terbaru',
+          columns:[{label:'Nama',w:215},{label:'Role',w:90},{label:'Tanggal',w:110},{label:'Jam',w:100}],
+          rows: d.logins.map(l=>[l.name, l.role==='admin'?'Admin':'Teknisi', l.date, l.time]),
+          emptyText:'Belum ada data login' }
+      ],
+      logo: {b64:AIS_LOGO_JPG_B64, w:AIS_LOGO_JPG_W, h:AIS_LOGO_JPG_H},
+      footerLeft: `${companyInfo.name} — AIS.NET Gudang`
+    });
+    savePdf(bytes, `Dashboard_AIS_${todayStr()}.pdf`);
+    toast('Dashboard berhasil diexport ke PDF', 'success');
+  }catch(e){
+    console.error(e);
+    toast('Gagal membuat PDF: '+(e && e.message ? e.message : e), 'error');
+  }
 });
 
 // ============================================================
@@ -2597,7 +2710,7 @@ function renderLaporan(){
       <thead><tr><th>Nama</th><th>ID</th><th style="text-align:right;">Total Transaksi</th><th style="text-align:right;">Total Barang Diambil</th><th>Terakhir Aktif</th></tr></thead>
       <tbody>${teknisiList.map(t=>{
         const theirLogs = keluarLogs.filter(r=>r.teknisi===t.name && inRange(r.date, laporanRange));
-        const totalQty = theirLogs.reduce((s,r)=>s+(r.qty||0),0);
+        const totalQty = theirLogs.reduce((s,r)=>s+(r.qty||0),0) - returQtyTeknisi(t.name, d=>inRange(d, laporanRange));
         const last = theirLogs.length ? theirLogs.map(r=>r.date).sort().slice(-1)[0] : '-';
         return `<tr><td>${escapeHtml(t.name)}</td><td style="font-family:var(--mono);font-size:11px;">${t.id}</td><td style="text-align:right;">${theirLogs.length}</td><td style="text-align:right;">${totalQty}</td><td>${last}</td></tr>`;
       }).join('') || `<tr><td colspan="5" class="empty">Belum ada teknisi</td></tr>`}</tbody>
@@ -2674,7 +2787,7 @@ $('exportBtn').addEventListener('click', ()=>{
       ["Nama","ID","Total Transaksi","Total Barang Diambil","Terakhir Aktif"],
       ...teknisiList.map(t=>{
         const theirLogs = keluarLogs.filter(r=>r.teknisi===t.name);
-        const totalQty = theirLogs.reduce((s,r)=>s+(r.qty||0),0);
+        const totalQty = theirLogs.reduce((s,r)=>s+(r.qty||0),0) - returQtyTeknisi(t.name);
         const last = theirLogs.length ? theirLogs.map(r=>r.date).sort().slice(-1)[0] : '-';
         return [t.name, t.id, theirLogs.length, totalQty, last];
       })
@@ -2713,5 +2826,6 @@ renderNav();
 $('cardScanInput').focus();
 </script>
 </div>
+<script>if('serviceWorker' in navigator){ window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{})); }</script>
 </body>
 </html>
