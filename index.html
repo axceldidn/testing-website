@@ -426,6 +426,11 @@
             <div class="flash" id="masukFlash"></div>
             <button class="cam-scan-btn" data-camtarget="masuk">📷 Scan Pakai Kamera</button>
             <button class="cam-scan-btn" data-filetarget="masuk" style="margin-top:6px;">📁 Upload Gambar Barcode Barang</button>
+            <button id="masukManualToggle" class="cam-scan-btn" style="margin-top:6px;">🔍 Barcode nggak kebaca? Cari manual</button>
+            <div id="masukManualBox" class="hidden" style="margin-top:8px;">
+              <input id="masukManualInput" type="text" placeholder="Ketik nama barang..." autocomplete="off" style="width:100%;padding:10px;border-radius:7px;border:1px solid var(--line);">
+              <div id="masukManualResults" style="max-height:220px;overflow-y:auto;margin-top:6px;"></div>
+            </div>
           </div>
           <div id="masukQueueArea"></div>
         </div>
@@ -654,6 +659,30 @@ let recentShowAll = false;
 let dashTeknisiRange = 'all';
 let laporanRange = 'all';
 
+// Tanggal kejadian manual (kalau lupa input). Tanggal & jam input asli (date/time) TETAP otomatis dan tidak bisa diubah;
+// tanggal manual hanya ditempel sebagai tag di Catatan supaya kelihatan jelas & tersimpan di server.
+function lateBlock(pfx){
+  const max = todayStr();
+  const d = new Date(); d.setDate(d.getDate()-30);
+  const min = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  return `<div style="margin-top:8px;font-size:12px;">
+    <label style="cursor:pointer;"><input type="checkbox" id="${pfx}LateChk"> 🕓 Lupa input? Isi tanggal kejadian (maks. 30 hari ke belakang)</label>
+    <div id="${pfx}LateWrap" class="hidden" style="margin-top:6px;">
+      <input type="date" id="${pfx}LateDate" min="${min}" max="${max}" style="padding:8px;border:1px solid var(--line);border-radius:7px;">
+      <div class="autoinfo" style="margin-top:4px;">Waktu input asli tetap tercatat otomatis (${max} ${nowTime()}). Tanggal ini hanya jadi keterangan "Tgl kejadian" di Catatan.</div>
+    </div></div>`;
+}
+function bindLate(pfx){
+  const c=$(pfx+'LateChk'); if(!c) return;
+  c.addEventListener('change',()=>{ $(pfx+'LateWrap').classList.toggle('hidden', !c.checked); });
+}
+function lateTag(pfx){
+  const c=$(pfx+'LateChk'); if(!c || !c.checked) return '';
+  const v=$(pfx+'LateDate').value;
+  if(!v) return null; // dicentang tapi belum diisi
+  if(v > todayStr()) return null;
+  return `[Tgl kejadian: ${v}] `;
+}
 function returQtyTeknisi(name, rangeFn){
   return masukLogs.filter(r=>r.jenis==='retur' && String(r.supplier||'').replace(/^Retur:\s*/,'')===name && (!rangeFn || rangeFn(r.date)))
     .reduce((x,r)=>x+(r.qty||0),0);
@@ -914,10 +943,12 @@ $('logoutModal').addEventListener('click', (e)=>{
 let camScannerInstance = null;
 let camTarget = null;
 let camScanLocked = false;
+let camLastText = '', camHits = 0;
 
 function openCameraScan(target){
   camTarget = target;
   camScanLocked = false;
+  camLastText = ''; camHits = 0;
   $('cameraModal').classList.add('show');
   $('cameraStatus').textContent = 'Membuka kamera...';
   $('cameraStatus').className = 'camera-status';
@@ -935,9 +966,12 @@ function openCameraScan(target){
 
   camScannerInstance.start(
     { facingMode: 'environment' },
-    { fps: 10, qrbox: { width: 260, height: 180 } },
+    { fps: 15, qrbox: { width: 280, height: 160 } },
     (decodedText)=>{
       if(camScanLocked) return; // barcode sudah kebaca sebelumnya, abaikan pembacaan berulang
+      // Anti salah baca: kode baru diterima kalau terbaca SAMA 3x berturut-turut
+      if(decodedText === camLastText){ camHits++; } else { camLastText = decodedText; camHits = 1; }
+      if(camHits < 3){ $('cameraStatus').textContent = 'Memverifikasi bacaan... tahan sebentar'; return; }
       camScanLocked = true;
       $('cameraStatus').textContent = `✓ Terbaca: ${decodedText}`;
       $('cameraStatus').className = 'camera-status';
@@ -1017,27 +1051,69 @@ $('fileScanInput').addEventListener('change', (e)=>{
 
   toast('Membaca barcode dari gambar...');
   const target = fileScanTarget;
-  const scanner = new Html5Qrcode('fileScanRegion', {
-    formatsToSupport: [ Html5QrcodeSupportedFormats.CODE_39, Html5QrcodeSupportedFormats.CODE_128, Html5QrcodeSupportedFormats.EAN_13, Html5QrcodeSupportedFormats.QR_CODE ],
-    verbose: false
-  });
+  const FORMATS = [ Html5QrcodeSupportedFormats.CODE_39, Html5QrcodeSupportedFormats.CODE_128, Html5QrcodeSupportedFormats.EAN_13, Html5QrcodeSupportedFormats.QR_CODE ];
 
-  scanner.scanFile(file, false)
-    .then(decodedText=>{
-      try{ scanner.clear(); }catch(e){}
-      toast(`✓ Barcode terbaca: ${decodedText}`, 'success');
-      if(target === 'login'){
-        loginWithCard(decodedText);
-      } else if(target === 'scan'){
-        handleScan(decodedText);
-      } else if(target === 'masuk'){
-        handleMasukScan(decodedText);
+  // Buat beberapa versi gambar (ukuran berbeda) lalu baca semuanya; kode dipakai kalau minimal 2 versi sepakat
+  const makeVariants = async (f)=>{
+    const out = [f];
+    try{
+      const bmp = await createImageBitmap(f);
+      for(const w of [700, 1100, 1600]){
+        const sc = w / bmp.width;
+        const cv = document.createElement('canvas');
+        cv.width = w; cv.height = Math.max(1, Math.round(bmp.height * sc));
+        const cx = cv.getContext('2d');
+        cx.imageSmoothingQuality = 'high';
+        cx.filter = 'grayscale(1) contrast(1.4)';
+        cx.drawImage(bmp, 0, 0, cv.width, cv.height);
+        const blob = await new Promise(r=>cv.toBlob(r,'image/png'));
+        if(blob) out.push(new File([blob], 'v'+w+'.png', {type:'image/png'}));
       }
-    })
-    .catch(()=>{
-      try{ scanner.clear(); }catch(e){}
+    }catch(e){ /* kalau gagal bikin varian, pakai gambar asli saja */ }
+    return out;
+  };
+
+  (async ()=>{
+    const variants = await makeVariants(file);
+    const votes = {};
+    for(const v of variants){
+      const sc = new Html5Qrcode('fileScanRegion', { formatsToSupport: FORMATS, verbose: false });
+      try{
+        const txt = await sc.scanFile(v, false);
+        votes[txt] = (votes[txt]||0) + 1;
+      }catch(e){ /* varian ini tidak terbaca, lanjut */ }
+      try{ sc.clear(); }catch(e){}
+    }
+    // Samakan variasi bacaan (mis. AIS00001 vs AIS000001) ke kode barang yang terdaftar
+    const canon = c => { const p = products.find(x=>x.code===c) || products.find(x=>x.code===normalizeScannedCode(c)); return p ? p.code : c; };
+    const merged = {};
+    Object.entries(votes).forEach(([c,n])=>{ const k = canon(c); merged[k] = (merged[k]||0) + n; });
+    let ranked = Object.entries(merged).sort((x,y)=>y[1]-x[1]);
+    if(!ranked.length){
       toast('✗ Barcode tidak kebaca di gambar itu — coba foto ulang lebih jelas & terang', 'error');
-    });
+      return;
+    }
+    // Kalau ada kode yang cocok dengan barang terdaftar, utamakan itu
+    const known = ranked.filter(r=>products.some(x=>x.code===r[0]));
+    if(known.length) ranked = known;
+    if(ranked.length > 1 && ranked[0][1] === ranked[1][1]){
+      toast('✗ Bacaan tidak konsisten (' + ranked.map(r=>r[0]).join(' / ') + ') — foto ulang lebih jelas', 'error');
+      return;
+    }
+    const [code, n] = ranked[0];
+    const pr = products.find(x=>x.code===code);
+    if(n < 2 && !confirm('Barcode terbaca: ' + code + (pr ? ' (' + pr.name + ')' : '') + '\n\nSudah benar? (cocokkan dengan kode di label barang)')){
+      return;
+    }
+    toast(`✓ Barcode terbaca: ${code}`, 'success');
+    if(target === 'login'){
+      loginWithCard(code);
+    } else if(target === 'scan'){
+      handleScan(code);
+    } else if(target === 'masuk'){
+      handleMasukScan(code);
+    }
+  })();
 });
 
 // ============================================================
@@ -1076,6 +1152,7 @@ function switchPage(id){
   target.classList.remove('hidden');
   document.querySelectorAll('[data-page]').forEach(el=> el.classList.toggle('active', el.dataset.page===id));
   const menuItem = MENU.find(m=>m.id===id);
+  if(menuItem && menuItem.adminOnly && !(currentUser && currentUser.role==='admin')){ target.classList.add('hidden'); return; }
   $('pageTitle').textContent = menuItem ? menuItem.label : id;
 
   if(id==='scan'){ renderRecent(); $('scanInput') && $('scanInput').focus(); }
@@ -1421,6 +1498,7 @@ function renderQueue(){
       ` : `
       <div class="autoinfo">👷 Teknisi: <b>${currentUser?escapeHtml(currentUser.name):'-'}</b> &nbsp;|&nbsp; 🕒 ${todayStr()} ${nowTime()} (otomatis)</div>
       `}
+      ${lateBlock('q')}
       <div class="btn-row">
         <button class="btn btn-ghost" id="qCancel">Batal</button>
         <button class="btn btn-primary" id="qConfirm">Catat</button>
@@ -1428,6 +1506,7 @@ function renderQueue(){
     </div>
   `;
   $('qCancel').addEventListener('click', ()=>{ pendingScan=null; renderQueue(); scanInput.focus(); });
+  bindLate('q');
   $('qConfirm').addEventListener('click', confirmQueue);
   $('qJumlah').focus(); $('qJumlah').select();
 }
@@ -1446,10 +1525,12 @@ function confirmQueue(){
       teknisiName = sel.value;
     }
   }
+  const lt = lateTag('q');
+  if(lt === null){ toast('Isi tanggal kejadiannya dulu (atau hilangkan centang)','error'); return; }
   const entry = {
     no: keluarLogs.length+1, code: pendingScan.code, name: pendingScan.name,
     date: todayStr(), time: nowTime(), qty, teknisi: teknisiName,
-    note: $('qNote').value.trim()
+    note: (lt + $('qNote').value.trim()).trim()
   };
   keluarLogs.push(entry);
   const prod = products.find(p=>p.code===pendingScan.code);
@@ -1902,6 +1983,27 @@ masukScanInput.addEventListener('keydown', e=>{
   }
 });
 
+$('masukManualToggle').addEventListener('click', ()=>{
+  const box = $('masukManualBox');
+  box.classList.toggle('hidden');
+  if(!box.classList.contains('hidden')){ $('masukManualInput').value=''; $('masukManualResults').innerHTML=''; $('masukManualInput').focus(); }
+});
+$('masukManualInput').addEventListener('input', e=>{
+  const q = e.target.value.trim().toLowerCase();
+  const box = $('masukManualResults');
+  if(!q){ box.innerHTML=''; return; }
+  const matches = products.filter(p=> p.name.toLowerCase().includes(q) || p.code.toLowerCase().includes(q)).slice(0,15);
+  box.innerHTML = matches.map(p=>`<div class="manual-result" data-code="${escapeHtml(p.code)}" style="padding:9px 10px;border:1px solid var(--line);border-radius:7px;margin-top:5px;cursor:pointer;background:#fff;">
+      <b>${escapeHtml(p.name)}</b><br><span style="font-size:11px;color:var(--muted);">${p.code} — Stok: ${p.stok}</span>
+    </div>`).join('') || `<div style="padding:8px;color:var(--muted);font-size:13px;">Nggak ketemu</div>`;
+  box.querySelectorAll('.manual-result').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      handleMasukScan(el.dataset.code);
+      $('masukManualBox').classList.add('hidden');
+    });
+  });
+});
+
 function handleMasukScan(code){
   let product = products.find(p=>p.code===code);
   if(!product){
@@ -1965,6 +2067,7 @@ function renderMasukQueue(){
         <div class="field"><label>Catatan</label><input type="text" id="mNote" placeholder="opsional, mis: alasan retur/rusak"></div>
       </div>
       <div class="autoinfo">🛡 Diterima oleh: <b>${currentUser?escapeHtml(currentUser.name):'-'}</b> &nbsp;|&nbsp; 🕒 ${todayStr()} ${nowTime()}</div>
+      ${lateBlock('m')}
       <div id="mRusakWarning" class="hidden" style="background:#fdeded;color:#a3372b;padding:8px 12px;border-radius:7px;font-size:12px;margin-top:8px;"></div>
       <div class="btn-row">
         <button class="btn btn-ghost" id="mCancel">Batal</button>
@@ -1992,6 +2095,7 @@ function renderMasukQueue(){
   });
   $('mRusakAsal').addEventListener('change', updateRusakWarning);
   $('mCancel').addEventListener('click', ()=>{ pendingMasuk=null; renderMasukQueue(); masukScanInput.focus(); });
+  bindLate('m');
   $('mConfirm').addEventListener('click', confirmMasuk);
   $('mJumlah').focus(); $('mJumlah').select();
 }
@@ -2010,6 +2114,8 @@ function confirmMasuk(){
     toast(`Stok ${prod.name} cuma ${prod.stok}, nggak bisa kurangi ${qty}`, 'error'); return;
   }
   const jenisLabel = { restock:'Restock', retur:'Retur: ', rusak: rusakAsal==='gudang' ? 'Rusak (dr gudang): ' : 'Rusak (dr pengambilan): ' };
+  const ltm = lateTag('m');
+  if(ltm === null){ toast('Isi tanggal kejadiannya dulu (atau hilangkan centang)','error'); return; }
   const entry = {
     no: masukLogs.length+1, code: pendingMasuk.code, name: pendingMasuk.name,
     date: todayStr(), time: nowTime(), qty,
@@ -2018,7 +2124,7 @@ function confirmMasuk(){
     supplier: needsTeknisi ? (jenisLabel[jenis]+$('mTeknisi').value) : ($('mSupplier').value.trim() || '-'),
     noNota: needsTeknisi ? '-' : ($('mNota').value.trim() || '-'),
     admin: currentUser?currentUser.name:'-',
-    note: $('mNote').value.trim()
+    note: (ltm + $('mNote').value.trim()).trim()
   };
   masukLogs.push(entry);
   // Rusak dari gudang -> KURANGI stok (baru ketauan rusak, sebelumnya dihitung stok bagus).
@@ -2823,7 +2929,7 @@ renderNav();
 $('cardScanInput').focus();
 </script>
 </div>
-<button id="installBtn" style="display:none;position:fixed;right:14px;bottom:14px;z-index:9999;padding:12px 16px;border:0;border-radius:999px;background:#f0a82e;color:#081726;font-weight:700;box-shadow:0 4px 14px rgba(0,0,0,.35);">📲 Pasang Aplikasi</button>
+<button id="installBtn" style="display:none;position:fixed;right:14px;bottom:14px;z-index:1500;padding:12px 16px;border:0;border-radius:999px;background:#f0a82e;color:#081726;font-weight:700;box-shadow:0 4px 14px rgba(0,0,0,.35);">📲 Pasang Aplikasi</button>
 <script>
 if('serviceWorker' in navigator){ window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{})); }
 let _dip=null; const _ib=document.getElementById('installBtn');
