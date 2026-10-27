@@ -385,7 +385,7 @@
           </div>
           <div class="table-wrap" style="max-height:420px;overflow-y:auto;">
             <table class="tbl-compact" id="recentTable">
-              <thead><tr><th>Nama Barang</th><th>Tgl / Jam</th><th>Jml</th><th>Teknisi</th><th>Catatan</th></tr></thead>
+              <thead><tr><th>Nama Barang</th><th>Tgl / Jam</th><th>Jml</th><th>Teknisi</th><th>Catatan</th><th></th></tr></thead>
               <tbody></tbody>
             </table>
           </div>
@@ -438,7 +438,7 @@
           <h3 class="section">Riwayat Barang Masuk</h3>
           <div class="table-wrap">
             <table class="tbl-wide">
-              <thead><tr><th>Jenis</th><th>Tgl/Jam</th><th>Barang</th><th style="text-align:right;">Jml</th><th>Supplier</th><th>No Nota</th><th>Diterima</th><th>Catatan</th></tr></thead>
+              <thead><tr><th>Jenis</th><th>Tgl/Jam</th><th>Barang</th><th style="text-align:right;">Jml</th><th>Supplier</th><th>No Nota</th><th>Diterima</th><th>Catatan</th><th></th></tr></thead>
               <tbody id="masukHistBody"></tbody>
             </table>
           </div>
@@ -732,7 +732,7 @@ const nowTime = () => new Date().toLocaleTimeString('id-ID',{hour:'2-digit',minu
 const MENU = [
   {id:'scan', label:'Pengeluaran', icon:'📤', adminOnly:false},
   {id:'stok', label:'Stok', icon:'📦', adminOnly:false},
-  {id:'masuk', label:'Barang Masuk', icon:'📥', adminOnly:true},
+  {id:'masuk', label:'Barang Masuk', icon:'📥', adminOnly:false},
   {id:'produk', label:'Data Barang', icon:'📋', adminOnly:true},
   {id:'opname', label:'Stock Opname', icon:'📊', adminOnly:true},
   {id:'teknisi', label:'Teknisi', icon:'👷', adminOnly:true},
@@ -1551,9 +1551,41 @@ function renderRecent(){
   const recent = source.slice(-limit).reverse();
   const toggleEl = $('recentToggle');
   if(toggleEl) toggleEl.textContent = recentShowAll ? 'Tampilkan Hari Ini Saja' : 'Tampilkan Semua';
-  tbody.innerHTML = recent.map(r=>`
-    <tr><td>${escapeHtml(r.name)}</td><td>${r.date} ${r.time||''}</td><td>${r.qty}</td><td>${escapeHtml(r.teknisi||'')}</td><td>${escapeHtml(r.note||'-')}</td></tr>
-  `).join('') || `<tr><td colspan="5" class="empty">${recentShowAll?'Belum ada scan':'Belum ada scan hari ini'}</td></tr>`;
+  const isAdm = !!(currentUser && currentUser.role==='admin');
+  tbody.innerHTML = recent.map(r=>{
+    const isKor = String(r.note||'').startsWith('[KOREKSI');
+    const btn = (isAdm && !isKor) ? `<button class="btn btn-ghost btn-koreksi" data-idx="${keluarLogs.indexOf(r)}" style="padding:4px 8px;font-size:12px;">✏ Koreksi</button>` : '';
+    return `<tr${isKor?' style="background:#fff7e6;"':''}><td>${escapeHtml(r.name)}</td><td>${r.date} ${r.time||''}</td><td>${r.qty}</td><td>${escapeHtml(r.teknisi||'')}</td><td>${escapeHtml(r.note||'-')}</td><td>${btn}</td></tr>`;
+  }).join('') || `<tr><td colspan="6" class="empty">${recentShowAll?'Belum ada scan':'Belum ada scan hari ini'}</td></tr>`;
+  tbody.querySelectorAll('.btn-koreksi').forEach(b=>b.addEventListener('click', ()=>koreksiKeluar(parseInt(b.dataset.idx,10))));
+}
+
+// Koreksi pengeluaran (khusus admin): baris asli TIDAK diubah/dihapus. Dicatat baris koreksi baru berisi selisih
+// (positif = tambah keluar, negatif = barang balik) lengkap dengan alasan, jadi riwayat tetap utuh.
+function koreksiKeluar(idx){
+  if(!(currentUser && currentUser.role==='admin')){ toast('Koreksi hanya bisa oleh admin','error'); return; }
+  const r = keluarLogs[idx];
+  if(!r){ toast('Data transaksi tidak ketemu','error'); return; }
+  const inp = prompt(`Koreksi: ${r.name} (${r.teknisi}, ${r.date} ${r.time||''})\nTercatat: ${r.qty}\n\nJumlah yang BENAR seharusnya berapa? (0 = batal total)`, String(r.qty));
+  if(inp === null) return;
+  const benar = parseInt(inp,10);
+  if(isNaN(benar) || benar < 0){ toast('Jumlah tidak valid','error'); return; }
+  const diff = benar - r.qty;
+  if(diff === 0){ toast('Jumlahnya sama, tidak ada yang dikoreksi','error'); return; }
+  const alasan = (prompt('Alasan koreksi (wajib diisi):','') || '').trim();
+  if(!alasan){ toast('Alasan koreksi wajib diisi','error'); return; }
+  if(!confirm(`Catat koreksi: ${r.qty} → ${benar} (selisih ${diff>0?'+':''}${diff}).\nStok ${r.name} akan ${diff>0?'berkurang':'bertambah'} ${Math.abs(diff)}. Lanjut?`)) return;
+  const entry = {
+    no: keluarLogs.length+1, code: r.code, name: r.name,
+    date: todayStr(), time: nowTime(), qty: diff, teknisi: r.teknisi,
+    note: `[KOREKSI] ${r.date} ${r.time||''}: ${r.qty}→${benar}. ${alasan} (oleh ${currentUser.name})`
+  };
+  keluarLogs.push(entry);
+  const prod = products.find(x=>x.code===r.code);
+  if(prod) prod.stok -= diff;
+  renderRecent(); renderProducts(); updateStatsQuiet();
+  toast(`Koreksi tercatat (${diff>0?'+':''}${diff})`, 'success');
+  pushToCloud({ type:'keluar', ...entry });
 }
 
 function updateStatsQuiet(){ /* stats now live only in Dashboard, recalculated on demand */ }
@@ -2012,7 +2044,10 @@ function handleMasukScan(code){
   }
   const flash = $('masukFlash');
   if(!product){
-    flash.innerHTML = `✗ Kode "${escapeHtml(code)}" belum terdaftar — <a href="#" id="goToProdukLink" style="color:#ffdca8;text-decoration:underline;">buat barang baru dulu di Data Barang</a>`;
+    const isAdminUser = currentUser && currentUser.role==='admin';
+    flash.innerHTML = isAdminUser
+      ? `✗ Kode "${escapeHtml(code)}" belum terdaftar — <a href="#" id="goToProdukLink" style="color:#ffdca8;text-decoration:underline;">buat barang baru dulu di Data Barang</a>`
+      : `✗ Kode "${escapeHtml(code)}" belum terdaftar — coba cari manual atau hubungi admin`;
     flash.className='flash err';
     const link = $('goToProdukLink');
     if(link) link.addEventListener('click', (e)=>{
@@ -2032,6 +2067,7 @@ function renderMasukQueue(){
   const area = $('masukQueueArea');
   if(!pendingMasuk){ area.innerHTML=''; return; }
   const teknisiList = users.filter(u=>u.role==='teknisi');
+  const isTekUser = !!(currentUser && currentUser.role==='teknisi');
   area.innerHTML = `
     <div class="queue-card">
       <div class="name">${escapeHtml(pendingMasuk.name)}</div>
@@ -2039,15 +2075,15 @@ function renderMasukQueue(){
       <div class="field" style="margin-top:8px;">
         <label>Jenis Barang Masuk</label>
         <select id="mJenis" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:7px;">
-          <option value="restock">📦 Restock dari Supplier</option>
+          ${isTekUser ? '' : '<option value="restock">📦 Restock dari Supplier</option>'}
           <option value="retur">↩ Retur dari Teknisi (masih bagus, nggak kepake)</option>
-          <option value="rusak">🔧 Rusak</option>
+          <option value="rusak">🔧 Rusak${isTekUser ? ' (dari gudang)' : ''}</option>
         </select>
       </div>
       <div class="field hidden" id="mRusakAsalWrap" style="margin-top:8px;">
         <label>Barang rusak ini asalnya dari mana?</label>
         <select id="mRusakAsal" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:7px;">
-          <option value="pengambilan">🔄 Balik dari pengambilan/tukar unit (udah kepotong pas Pengeluaran) — stok TIDAK berubah</option>
+          ${isTekUser ? '' : '<option value="pengambilan">🔄 Balik dari pengambilan/tukar unit (udah kepotong pas Pengeluaran) — stok TIDAK berubah</option>'}
           <option value="gudang">🏬 Emang masih di gudang, baru ketauan rusak pas dicek — stok DIKURANGI</option>
         </select>
       </div>
@@ -2066,6 +2102,7 @@ function renderMasukQueue(){
         <div class="field" id="mNotaWrap"><label>No. Nota</label><input type="text" id="mNota" placeholder="mis: INV-0012"></div>
         <div class="field"><label>Catatan</label><input type="text" id="mNote" placeholder="opsional, mis: alasan retur/rusak"></div>
       </div>
+      ${isTekUser ? '<div class="autoinfo" style="margin-bottom:6px;">ℹ Akun teknisi hanya bisa mencatat <b>Retur</b> dan <b>Rusak (dari gudang)</b>. Restock hanya oleh admin.</div>' : ''}
       <div class="autoinfo">🛡 Diterima oleh: <b>${currentUser?escapeHtml(currentUser.name):'-'}</b> &nbsp;|&nbsp; 🕒 ${todayStr()} ${nowTime()}</div>
       ${lateBlock('m')}
       <div id="mRusakWarning" class="hidden" style="background:#fdeded;color:#a3372b;padding:8px 12px;border-radius:7px;font-size:12px;margin-top:8px;"></div>
@@ -2097,6 +2134,13 @@ function renderMasukQueue(){
   $('mCancel').addEventListener('click', ()=>{ pendingMasuk=null; renderMasukQueue(); masukScanInput.focus(); });
   bindLate('m');
   $('mConfirm').addEventListener('click', confirmMasuk);
+  if(isTekUser){
+    $('mJenis').dispatchEvent(new Event('change'));
+    const ms = $('mTeknisi');
+    ms.value = currentUser.name;
+    if(ms.value !== currentUser.name){ const o=document.createElement('option'); o.value=currentUser.name; o.textContent=currentUser.name; ms.appendChild(o); ms.value=currentUser.name; }
+    ms.disabled = true;
+  }
   $('mJumlah').focus(); $('mJumlah').select();
 }
 
@@ -2104,6 +2148,10 @@ function confirmMasuk(){
   const qty = parseInt($('mJumlah').value)||1;
   const jenis = $('mJenis').value;
   const needsTeknisi = jenis==='retur' || jenis==='rusak';
+  if(currentUser && currentUser.role==='teknisi'){
+    if(jenis==='restock'){ toast('Restock hanya bisa dicatat oleh admin','error'); return; }
+    if(jenis==='rusak' && $('mRusakAsal').value!=='gudang'){ toast('Teknisi hanya bisa mencatat rusak dari gudang','error'); return; }
+  }
   if(needsTeknisi && !$('mTeknisi').value){
     toast('Pilih dulu teknisi yang mengembalikan/mengecek barangnya','error'); return;
   }
@@ -2165,7 +2213,10 @@ function renderMasukHistory(){
         : `<div style="font-size:10px;color:var(--muted);margin-top:2px;">stok tdk berubah</div>`;
       badge = badge + sub;
     }
-    return `<tr>
+    const isKor = String(r.note||'').startsWith('[KOREKSI');
+    const isAdm = !!(currentUser && currentUser.role==='admin');
+    const btn = (isAdm && !isKor) ? `<button class="btn btn-ghost btn-koreksi-masuk" data-idx="${masukLogs.indexOf(r)}" style="padding:4px 8px;font-size:12px;">✏ Koreksi</button>` : '';
+    return `<tr${isKor?' style="background:#fff7e6;"':''}>
       <td>${badge}</td>
       <td>${r.date} ${r.time||''}</td>
       <td>${escapeHtml(r.name)}</td>
@@ -2174,8 +2225,45 @@ function renderMasukHistory(){
       <td>${escapeHtml(r.noNota||'')}</td>
       <td>${escapeHtml(r.admin||'')}</td>
       <td>${escapeHtml(r.note||'-')}</td>
+      <td>${btn}</td>
     </tr>`;
   }).join('');
+  body.querySelectorAll('.btn-koreksi-masuk').forEach(b=>b.addEventListener('click', ()=>koreksiMasuk(parseInt(b.dataset.idx,10))));
+}
+
+// Koreksi barang masuk (khusus admin): baris asli tetap, dicatat baris koreksi berisi selisih (bisa minus) + alasan.
+// Efek stok mengikuti jenisnya: restock/retur -> stok +selisih; rusak dari gudang -> stok -selisih; rusak dari pengambilan -> stok tetap.
+function koreksiMasuk(idx){
+  if(!(currentUser && currentUser.role==='admin')){ toast('Koreksi hanya bisa oleh admin','error'); return; }
+  const r = masukLogs[idx];
+  if(!r){ toast('Data transaksi tidak ketemu','error'); return; }
+  const inp = prompt(`Koreksi: ${r.name} (${r.jenis||'restock'}, ${r.date} ${r.time||''})\nTercatat: ${r.qty}\n\nJumlah yang BENAR seharusnya berapa? (0 = batal total)`, String(r.qty));
+  if(inp === null) return;
+  const benar = parseInt(inp,10);
+  if(isNaN(benar) || benar < 0){ toast('Jumlah tidak valid','error'); return; }
+  const diff = benar - r.qty;
+  if(diff === 0){ toast('Jumlahnya sama, tidak ada yang dikoreksi','error'); return; }
+  const alasan = (prompt('Alasan koreksi (wajib diisi):','') || '').trim();
+  if(!alasan){ toast('Alasan koreksi wajib diisi','error'); return; }
+  const prod = products.find(x=>x.code===r.code);
+  const jenis = r.jenis || 'restock';
+  let efek = 0;
+  if(jenis==='rusak'){ efek = (r.rusakAsal==='gudang') ? -diff : 0; } else { efek = diff; }
+  if(prod && prod.stok + efek < 0){ toast(`Stok ${prod.name} cuma ${prod.stok}, koreksi ini bikin stok minus`, 'error'); return; }
+  if(!confirm(`Catat koreksi: ${r.qty} → ${benar} (selisih ${diff>0?'+':''}${diff}).\n` + (efek===0 ? 'Stok tidak berubah.' : `Stok ${r.name} akan ${efek>0?'bertambah':'berkurang'} ${Math.abs(efek)}.`) + ' Lanjut?')) return;
+  const entry = {
+    no: masukLogs.length+1, code: r.code, name: r.name,
+    date: todayStr(), time: nowTime(), qty: diff,
+    jenis: jenis, rusakAsal: r.rusakAsal || null,
+    supplier: r.supplier || '-', noNota: r.noNota || '-',
+    admin: currentUser.name,
+    note: `[KOREKSI] ${r.date} ${r.time||''}: ${r.qty}→${benar}. ${alasan} (oleh ${currentUser.name})`
+  };
+  masukLogs.push(entry);
+  if(prod) prod.stok += efek;
+  renderMasukHistory(); renderProducts(); updateStatsQuiet();
+  toast(`Koreksi tercatat (${diff>0?'+':''}${diff})`, 'success');
+  pushToCloud({ type:'masuk', ...entry });
 }
 
 // ============================================================
